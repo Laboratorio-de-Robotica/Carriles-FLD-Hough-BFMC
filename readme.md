@@ -4,6 +4,10 @@ Este proyecto es una prueba de concepto del uso de espacios de Hough para detect
 
 El proyecto consume un video grabado desde el auto, y produce una vista cenital y un espacio de Hough.  No incluye el análisis del espacio de Hough para reconocer las líneas de carriles.
 
+![Vista cenital](docs/Zenithal_wide.png)
+
+[Video demo](https://drive.google.com/file/d/1K8u8Ec_z8S3TaQzb88h5Vym0D-rSOVIx/view)
+
 # Instalación
 
 1. Requisitos: Python3 y Numpy
