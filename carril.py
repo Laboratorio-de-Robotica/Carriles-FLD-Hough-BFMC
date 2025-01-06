@@ -80,7 +80,7 @@ Bins:
 - angles 0..pi: 10 bins
 - distances -500..+500: 20 bins
 '''
-bins = det.Bins(maxDistance=1500, binsSizes=(11,41), verbose=True)
+hs = det.HoughSpace()
 annotations = det.SegmentsAnnotator()
 cenitalAnnotations = det.SegmentsAnnotator(thickness=2, colorMap=det.SegmentsAnnotator.colorMapBGR)
 umbralCanny = 160
@@ -111,40 +111,37 @@ while(True):
 
     zenithals = det.zenithalSegmentsFactory(segments, hui.H2)
     zenithals.setReferencePoint((hui.zenithalSize[0]//2, hui.zenithalSize[1]))
-    zenithals.computeAnglesAndDistances()   # Hough variables
-    
-    bins.assignToBins(zenithals)
-    houghSpacePerspectiveWeigthed = bins.makeHoughSpace(segments.lengths, 'Hough space perspective weigth')
+    zenithals.computeAnglesAndDistances()   # Hough variables    
+    hs.assign2Bins(zenithals)
+    hs.computeVotes(segments.lengths)
+
     #houghSpaceZenithalWeigthed = bins.makeHoughSpace(zenithals.lengths, 'Hough space zenithal weigth')
     endProcesst = timer()
 
 
     startAnnotationt = timer()
-    #houghSpacePerspectiveWeigthed.show(showMax=True)
-    #houghSpaceZenithalWeigthed.show(showMax=True)
 
     imAnnotated = cv.cvtColor(imGray//2, cv.COLOR_GRAY2BGR)
     annotations.drawSegments(imAnnotated, segments.coords, color=(0,0,255))
-    winnerValue = houghSpacePerspectiveWeigthed.maxVal
-    winnerBin = houghSpacePerspectiveWeigthed.maxLoc
-    mainSegmentsIndices = bins.getIndicesFromBin(winnerBin)
+    winnerValue = hs.maxVal
+    winnerBin = hs.maxLoc
+    mainSegmentsIndices = hs.getIndicesFromBin(*winnerBin)
     annotations.drawSegments(imAnnotated, segments.coords[mainSegmentsIndices])
     cv.putText(imAnnotated, f'Winner bin: {winnerBin} value: {winnerValue}', (10, 20), cv.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255))
     cv.imshow('Main segments', imAnnotated)
 
     # zenithal fustrum view
-    zenithalIm2 = cv.warpPerspective(im, hui.H2, hui.zenithalSize)
-    cv.drawMarker(zenithalIm2, zenithals.referencePoint.astype(np.int32), (0,0,255), cv.MARKER_CROSS, 20, 2)
-    cenitalAnnotations.drawSegments(zenithalIm2, zenithals, intensities=zenithals.angles/3.17, 
-                                    message='Segments '+str(len(zenithals.coords))),
+    zenithalIm = cv.warpPerspective(im, hui.H2, hui.zenithalSize)
+    cv.drawMarker(zenithalIm, zenithals.referencePoint.astype(np.int32), (0,0,255), cv.MARKER_CROSS, 20, 2)
+    cenitalAnnotations.drawSegments(zenithalIm, zenithals, intensities=zenithals.angles/3.17, 
+                                    message= f'FLD: {endFLDt-startFLDt:.3f} s\nProcess: {endProcesst-startProcesst:.3f} s\nSegments {str(len(zenithals.coords))}'),
 
     # autoshrink
-    while(zenithalIm2.shape[0] > 700):
-        zenithalIm2 = cv.resize(zenithalIm2, None, fx=0.5, fy=0.5, interpolation=cv.INTER_LINEAR)
+    while(zenithalIm.shape[0] > 700):
+        zenithalIm = cv.resize(zenithalIm, None, fx=0.5, fy=0.5, interpolation=cv.INTER_LINEAR)
 
-    houghSpacePerspectiveWeigthed.pasteVisualization(zenithalIm2, scale=4.0, showMax=True)
-
-    cv.imshow('zenithal wide', zenithalIm2)
+    hs.pasteVisualization(zenithalIm, scale=4.0, showMax=True)
+    cv.imshow('zenithal wide', zenithalIm)
 
     endAnnotationt = timer()
 
@@ -168,8 +165,8 @@ while(True):
                 print(f"winnerBin: {winnerBin}")
                 print(f"mainSegmentsIndices: {len(mainSegmentsIndices)}")
                 print(*mainSegmentsIndices)
-                print('houghSpacePerspectiveWeigthed.houghSpace:')
-                print(houghSpacePerspectiveWeigthed.houghSpace)
+                print('hs.houghSpace:')
+                print(hs.houghSpace)
                 print('angleBinsIndices, distanceBinsIndices:')
                 '''
                 for a,b,c,d in zip(bins.angleBinsIndices, bins.distanceBinsIndices, zenithals.angles, zenithals.distances):

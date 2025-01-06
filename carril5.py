@@ -1,6 +1,6 @@
 import numpy as np
 import cv2 as cv
-import detector as det
+import detector1 as det
 import HUI
 import argparse
 from timeit import default_timer as timer

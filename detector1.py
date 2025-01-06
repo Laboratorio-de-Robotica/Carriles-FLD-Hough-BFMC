@@ -2,7 +2,7 @@
 
 import numpy as np
 import cv2 as cv
-import math
+from math import modf
 
 '''
 A Segments object represent a set of lines (straight segments), stored in coords property, as an array of segments.
@@ -128,7 +128,7 @@ class SegmentsAnnotator:
         Mapea colores continuos y cíclicos: el color de 0,999 es adyacente al de 0.0.
         Implementa una paleta de 765 colores.
         '''
-        decimal, integer = math.modf((intensity % 1)*3)
+        decimal, integer = modf((intensity % 1)*3)
         range = int(integer)
         scalar = int(decimal*255) # 0..254
         match range:
@@ -144,7 +144,7 @@ class SegmentsAnnotator:
     def colorMapYMC(intensity):
         '''
         '''
-        decimal, integer = math.modf((intensity % 1)*3)
+        decimal, integer = modf((intensity % 1)*3)
         range = int(integer)
         scalar = int(decimal*255) # 0..254
         match range:
@@ -234,46 +234,147 @@ class SegmentsAnnotator:
             for i, textLine in enumerate(textLines):
                 cv.putText(image, textLine, (10, image.shape[0]-5-20*(n-i-1)), cv.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255))
 
-class HoughSpace:
-    def __init__(self, angleBins=11, maxDistanceAsLanes=4, laneBins=4, laneWidth=210):
+class Bins:
+    '''
+    HoughSpace is a 2D histogram, its variables are angles and distances.
+    They are discretized in bins.
+    Bins class configure the bins in its constructor, so they can be used many times in the main loop.
+    It stores the bins values during each loop, to be consumed by a HoughSpace object to produce the actual histogram.
+    As each histogram is weigthed, many histograms can be produced with different weigths and from the same discretized variables.
+    That's why Bins are separated from HoughSpace.
+
+    Use:
+    Configure Bins in construction, all of them have a default value and can be changed providing the value to the constructor or after construction:
+    - binSizes tell how many bins for angles and distances, in that order
+    - maxDistance is the far edge for distances bins
+    - histoRange has the span (min, max) of both variables, (0-pi, +-maxDistance)
+    - angleIntervals has the boundaries of each angle bin, evenly spaced by default
+    - distanceIntervals has the boundaries of each distance bin, evenly spaced by default
+    - binRanges needed for histogram2D in HoughSpace
+
+    In the loop:
+    - assignToBins(segments) discretizes the variables, and Bins is ready to create HoughSpace
+    - makeHoughSpace(votes) make a new HoughSpace object linked to Bins, to analize and get binCoords
+    - getIndicesFromBins(binCoords) provides the indices to the segments assigned to a particular bin
+
+    '''
+    def __init__(self, binsSizes = (11,41), maxDistance = 1500, verbose=False):
         '''
         Constructor
-        - angleBins: number of bins for angles from 0 to pi, p/2 is vertical
-        - maxDistanceAsLanes: far edge for distances bins, in lanes
-        - laneBins: number of bins in one lane
-        - laneWidth: width of a lane in pixels
+        - binsSizes: number of bins (angles, distances)
+        - maxDistance: far edge for distances bins
+        - verbose: print configuration
         '''
-        self.angleBins = angleBins
-        self.maxDistanceAsLanes = maxDistanceAsLanes
-        self.laneBins = laneBins
-        self.laneWidth = laneWidth
+        self.histoRange = np.array([[0.0,np.pi],[-maxDistance, maxDistance]], np.float32)
+        self.binsSizes = binsSizes
+        self.makeBinsRanges()
+        if(verbose):
+            print('Axis: (angles, distances) (row, column)')
+            print('Bins sizes', self.binsSizes)
+            print('Histogram ranges', self.histoRange)
+            #print('Distances intervals', self.distanceIntervals)
 
-        self.centralAngleBin = angleBins // 2
-        self.angle2index = angleBins / math.pi
-        self.distance2index = laneBins / laneWidth
-        self.maxDistanceInPixels = laneWidth * maxDistanceAsLanes
-        self.centralDistanceBin = math.ceil(laneBins * maxDistanceAsLanes)
-        self.distanceBins = 2 * self.centralDistanceBin + 1
-
-    def assign2Bins(self, segments):
-        self.angleIndices = np.clip((segments.angles * self.angle2index).astype(int), 0, self.angleBins-1)
-        self.distanceIndices = np.clip((segments.distances * self.distance2index + self.centralDistanceBin).astype(int), 0, self.distanceBins-1)
-
-    def getIndicesFromBin(self, angleBin, distanceBin):
+    def makeBinsRanges(self):
         '''
-        Get the indices of elements in the bin that match the given angle and distance bins.
+        Bin ranges are used in np.digitize() in assignToBins().
+        They are constant during the object lifetime.
+        Produced by default in construction, must be recalculated if the user changes histoRange.
         '''
-        return np.argwhere(np.logical_and(self.angleIndices == angleBin, self.distanceIndices == distanceBin)).reshape(-1)
+        self.angleIntervals    = np.linspace(self.histoRange[0,0], self.histoRange[0,1], self.binsSizes[0]+1)
+        self.distanceIntervals = np.linspace(self.histoRange[1,0], self.histoRange[1,1], self.binsSizes[1]+1)
+        self.binsRanges = np.array([[0.0, self.binsSizes[0]-1],[0, self.binsSizes[1]-1]], np.float32)
 
+    def assignToBins(self, segments):
+        '''
+        Produce inner arrays, same size of segments, with the correspondent bin number.
+        Used later in computeVotes().
+        For 20 bins, indices span from 0 to 19.  Indices -1 and 20 belong to values out of range.
+        '''
+        self.angleBinsIndices    = np.digitize(segments.angles, self.angleIntervals) - 1
+        self.distanceBinsIndices = np.digitize(segments.distances, self.distanceIntervals) - 1
+
+    def getIndicesFromBin(self, binCoords):
+        '''
+        Get the indices of elements in the bin that match the given bin coordinates.
+
+        Args:
+            binCoords (tuple): A tuple containing the coordinates of the bin (angle, distance).
+
+        Returns:
+            tuple: A tuple of arrays, each containing the indices of the elements 
+                    that match the given bin coordinates.
+        '''
+        return np.argwhere(np.logical_and(self.angleBinsIndices == binCoords[0], self.distanceBinsIndices == binCoords[1])).reshape(-1)
+    
+    def makeHoughSpace(self, votes, windowName):
+        '''
+        HoughSpace factory.
+        It creates a HoughSpace object from this Bins object, with the given votes.
+        '''
+        return HoughSpace(self, votes, windowName)
+
+
+'''
+Produce the voting space (Hough parametric space) from segments.
+It uses distances and angles from segments to address a bin, then adds a weighted vote to it.
+
+- Constructor: it links to a provided Bins object; if votes is provided it runs computeVotes()
+- computeVotes: makes a weigthed 2D histogram called houghSpace, locates the maximum and its value
+- show: make a colored image of the houghSpace for visualization; optionally highliting the maximum and showing it on a window
+
+How to use:
+- contruct an instance assigning a Bins object, or use the factory provided by Bins: Bins.makeHoughSpace()
+- computeVotes() if not already done it in construction
+- analize houghSpace
+- show() houghSpace
+'''
+class HoughSpace:
+    """
+    A class to represent the Hough Space for line detection using the Hough Transform.
+
+    Attributes
+    ----------
+    bins : object
+        An object containing the bins information for angles and distances.
+    windowName : str
+        The name of the window to display the Hough Space image.
+    houghSpace : ndarray
+        The 2D histogram representing the Hough Space.
+    maxLoc : tuple
+        The location of the maximum value in the Hough Space.
+    maxVal : float
+        The maximum value in the Hough Space.
+
+    Methods
+    -------
+    computeVotes(votes):
+        Computes a 2D histogram weighted with the given votes.
+    show(showMax=False):
+        Produces and returns a colormapped image of the histogram, optionally highlighting the peak.
+    """
+    def __init__(self, bins, votes, windowName):
+        self.bins = bins
+        self.windowName = windowName
+        if(votes is not None):
+            self.computeVotes(votes)
+
+    '''
+    Compute 2D histrogram weigthed with given votes.
+    Votes is an array the same size of segments, with weigths; for example, segments lentgh.
+    The resulting histogram is returned and remains accesible in self.hougSpace .
+    If votes is not provided, an unweigthed histogram is computed.
+    '''
     def computeVotes(self, votes):
-        self.houghSpace = np.zeros((self.angleBins, self.distanceBins), np.float32)
-        np.add.at(self.houghSpace, (self.angleIndices, self.distanceIndices), votes)
-
+        # histogram2d: rows: angles; columns: distances
+        self.houghSpace , xedges, yedges = np.histogram2d(
+            self.bins.angleBinsIndices, self.bins.distanceBinsIndices, weights=votes, 
+            bins=self.bins.binsSizes, range=self.bins.binsRanges
+        )
         self.maxLoc = np.unravel_index(np.argmax(self.houghSpace), self.houghSpace.shape)
         self.maxVal = self.houghSpace[self.maxLoc]
         return self.houghSpace
 
-    def getVisualization(self, scale = None, showMax=False):
+    def getVisualization(self, showMax=False):
         '''
         Produce and return a colormapped image of the histogram produced in computeVotes(),
         optionally highliting the peak if showMax is True,
@@ -282,19 +383,28 @@ class HoughSpace:
         houghSpaceColor = cv.applyColorMap(houghSpaceGray.astype(np.uint8), cv.COLORMAP_DEEPGREEN)
         if(showMax):
             houghSpaceColor[self.maxLoc[0], self.maxLoc[1]] = (0,0,255)
-        if(scale is not None):
-            houghSpaceColor = cv.resize(houghSpaceColor, None, fx=scale, fy=scale, interpolation=cv.INTER_NEAREST)
 
         return houghSpaceColor
 
+    def show(self, showMax=False):
+        houghSpaceColor = self.getVisualization(showMax)
+        if(self.windowName):
+            cv.imshow(self.windowName, houghSpaceColor)
+        return houghSpaceColor
+    
     def pasteVisualization(self, image, borderColor=(0,128,255), scale = None, showMax=False):
-        houghSpaceColor = self.getVisualization(scale, showMax)
+        houghSpaceColor = self.getVisualization(showMax)
+        if(scale is not None):
+            houghSpaceColor = cv.resize(houghSpaceColor, None, fx=scale, fy=scale, interpolation=cv.INTER_NEAREST)
         
         ih, iw, _ = image.shape
         hh, hw, _ = houghSpaceColor.shape
         image[-hh-1:-1, -hw-1:-1] = houghSpaceColor
         if(borderColor is not None):
+            #image[-hh-2:, -hw-2:] = borderColor
             cv.rectangle(image, (iw-hw-2, ih-hh-2), (iw-1, ih-1), borderColor)
             cv.line(image, (iw-hw//2-1, ih-hh-2), (iw-hw//2-1, ih-1), borderColor)
             cv.line(image, (iw-hw-2, ih-hh//2-1), (iw- 1, ih-hh//2-1), borderColor)
         return houghSpaceColor
+
+

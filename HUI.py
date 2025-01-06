@@ -38,7 +38,7 @@ class Hui:
         frameHeight = imShowSize[1]
         self.horizon = int(frameHeight * 0.32)
         self.top     = int(frameHeight * 0.75)
-        self.limit   = int(frameHeight * 0.42)
+        self.limit   = int(frameHeight * 0.45)
         self.zenithalSquareSide = 500
         self.H = None
         self.afterRoi = afterRoi
