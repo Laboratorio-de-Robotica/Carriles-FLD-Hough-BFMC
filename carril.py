@@ -132,7 +132,7 @@ while(True):
 
     # Main axes from max vote
     mainSegmentsIndices = hs.getIndicesFromBin(*hs.maxLoc)
-    mainSegmentIndex = np.argmax(segments.lengths[mainSegmentsIndices])
+    mainSegmentIndex = mainSegmentsIndices[np.argmax(segments.lengths[mainSegmentsIndices])]
     mainZenithalDelta = zenithals.deltas[mainSegmentIndex]/zenithals.lengths[mainSegmentIndex]
 
 

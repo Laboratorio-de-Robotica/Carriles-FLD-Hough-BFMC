@@ -336,11 +336,11 @@ class HoughSpace:
         self.angleIndices = np.clip((segments.angles * self.angle2index).astype(int), 0, self.angleBins-1)
         self.distanceIndices = np.clip((segments.distances * self.distance2index + self.centralDistanceBin).astype(int), 0, self.distanceBins-1)
 
-    def getIndicesFromBin(self, angleBin, distanceBin):
+    def getIndicesFromBin(self, angleIndex, distanceIndex):
         '''
         Get the indices of elements in the bin that match the given angle and distance bins.
         '''
-        return np.argwhere(np.logical_and(self.angleIndices == angleBin, self.distanceIndices == distanceBin)).reshape(-1)
+        return np.argwhere(np.logical_and(self.angleIndices == angleIndex, self.distanceIndices == distanceIndex)).reshape(-1)
 
     def computeVotes(self, votes):
         '''
