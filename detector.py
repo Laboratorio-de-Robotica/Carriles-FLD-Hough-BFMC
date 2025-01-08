@@ -4,30 +4,23 @@ import numpy as np
 import cv2 as cv
 import math
 
-'''
-A Segments object represent a set of lines (straight segments), stored in coords property, as an array of segments.
-Each segment is a pair of 2D points.
-All arrays are ndarray with main dimension of n.
-
-Segments properties:
-
-n: number of segments
-referencePoint: 2D point, origin for Hough distance calculation
-
-ndarray of n rows:
-coords: ndarray de segmentos detectados [n,2,2], indefinido en un objeto vacío, se define una vez y no debería cambiar
-deltas: (dx,dy)
-lengths: segments lengths
-distances: Hough distances to reference point
-angles: segments angles
-'''
 class Segments:
     '''
-    Constructor
-    Sin argumentos crea un objeto vacío
-    El argumento puede ser:
-    - ndarray [n,1,4] con segmentos de Fast Line Detector
-    - Segments object, copia coords del objecto
+    A Segments object represent a set of lines (straight segments), stored in coords property, as an array of segments.
+    Each segment is a pair of 2D points.
+    All arrays are ndarray with main dimension of n.
+
+    Segments properties:
+
+    n: number of segments
+    referencePoint: 2D point, origin for Hough distance calculation
+
+    ndarray of n rows:
+    coords: ndarray de segmentos detectados [n,2,2], indefinido en un objeto vacío, se define una vez y no debería cambiar
+    deltas: (dx,dy)
+    lengths: segments lengths
+    distances: Hough distances to reference point
+    angles: segments angles
     '''
     def __init__(self, segs, referencePoint=None):
         '''
@@ -127,10 +120,9 @@ class Segments:
 
 def zenithalSegmentsFactory(points, H, referencePoint=None):
     '''
-    Usa puntos de un ndarray o de un objeto Segments, 
-    aplica la transformación homogénea H [3,3], 
-    crea un nuevo objeto Segments con la misma cantidad de segmentos, 
-    pero con las coordenadas de sus puntos transformadas por H
+    Creates a Segments object with a zenithal projection of the given segments,
+    apllying the given homography H of shape (3,3).
+    The number of segments remains the same.
     '''
     if(isinstance(points, Segments)):
         points = points.coords
@@ -150,17 +142,17 @@ def zenithalSegmentsFactory(points, H, referencePoint=None):
 
     return Segments(projectedSegments, referencePoint=referencePoint)
 
-'''
-Annotator is a class to draw segments over an image.
-'''
 class SegmentsAnnotator:
+    '''
+    Annotator is a class to draw segments over an image.
+    '''
     @staticmethod
     def colorMapBGR(intensity):
-        
         '''
-        Devuelve un color en formato BGR a partir de una intensidad en [0.0,1.0)
-        Mapea colores continuos y cíclicos: el color de 0,999 es adyacente al de 0.0.
-        Implementa una paleta de 765 colores.
+        Return an BGR color from an intensity in the range [0.0,1.0),
+        with bright 255 - primary and secondary colors.
+        It maps colors in a cyclic pattern: color for 0,999 is neighbour to color for 0.0.
+        Adopts a pallete of 765 colors.
         '''
         decimal, integer = math.modf((intensity % 1)*3)
         range = int(integer)
@@ -177,6 +169,10 @@ class SegmentsAnnotator:
     @staticmethod
     def colorMapYMC(intensity):
         '''
+        Return an BGR color from an intensity in the range [0.0,1.0),
+        with bright 510 - secondary and tertiary colors.
+        It maps colors in a cyclic pattern: color for 0,999 is neighbour to color for 0.0.
+        Adopts a pallete of 765 colors.
         '''
         decimal, integer = math.modf((intensity % 1)*3)
         range = int(integer)
@@ -190,6 +186,7 @@ class SegmentsAnnotator:
 
     @staticmethod
     def colorMapGray(intensity):
+        '''Gray scale color mapping'''
         scalar = int(intensity*256)
         return (scalar, scalar, scalar)
 
@@ -269,10 +266,17 @@ class SegmentsAnnotator:
                 cv.putText(image, textLine, (10, image.shape[0]-5-20*(n-i-1)), cv.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255))
 
 class HoughSpace:
-    def __init__(self, angleBins=11, maxDistanceAsLanes=4, laneBins=4, laneWidth=210):
+    def __init__(self, angleBins=10, maxDistanceAsLanes=4, laneBins=4, laneWidth=210):
         '''
         Constructor
-        - angleBins: number of bins for angles from 0 to pi, p/2 is vertical
+        Defines quantity of bins, factor from distances and angles to it corresponding bins.
+        angleBins should be even if you want to look into perpendicular angles.
+        Angles range from 0 to pi, both ends are horizontal, so pi/2 is vertical.
+        distanceBins is odd, so zero distance is in the middle, 
+        to the left go negative distances, to the right go positive distances.
+
+        Parameters:
+        - angleBins: number of bins for angles from 0 to pi, p/2 is vertical, even number recommended
         - maxDistanceAsLanes: far edge for distances bins, in lanes
         - laneBins: number of bins in one lane
         - laneWidth: width of a lane in pixels
@@ -290,6 +294,12 @@ class HoughSpace:
         self.distanceBins = 2 * self.centralDistanceBin + 1
 
     def assign2Bins(self, segments):
+        '''
+        Two parallel arrays of indices are created from segments angles and distances,
+        pointing to the corresponding bins in the Hough space.
+        They are clipped, so values out of range are set to the nearest valid value.
+        This affects distanceIndices, the last bins at both ends will add all the distances greater than maxDistanceInPixels.
+        '''
         self.angleIndices = np.clip((segments.angles * self.angle2index).astype(int), 0, self.angleBins-1)
         self.distanceIndices = np.clip((segments.distances * self.distance2index + self.centralDistanceBin).astype(int), 0, self.distanceBins-1)
 
@@ -300,6 +310,13 @@ class HoughSpace:
         return np.argwhere(np.logical_and(self.angleIndices == angleBin, self.distanceIndices == distanceBin)).reshape(-1)
 
     def computeVotes(self, votes):
+        '''
+        Populates the Hough space.
+        votes is a parallel array (same size as segments) with the votes for each segment.
+        It often is segments.lengths, but can be any other value.
+        If you don't want weighted votes but only counted votes, you can use votes=1.
+        It also computes 1D histrogram for angles, and 1D histogram for distances near the central angle bin.
+        '''
         self.houghSpace = np.zeros((self.angleBins, self.distanceBins), np.float32)
         np.add.at(self.houghSpace, (self.angleIndices, self.distanceIndices), votes)
 
@@ -307,14 +324,14 @@ class HoughSpace:
         self.maxVal = self.houghSpace[self.maxLoc]
 
         self.angleHistogram = np.sum(self.houghSpace, axis=1)
-        self.laneZone = np.sum(self.houghSpace[self.centralAngleBin-1:self.centralAngleBin+2], axis=0)[np.newaxis,:]
+        self.laneZone = np.sum(self.houghSpace[self.centralAngleBin-1:self.centralAngleBin+1], axis=0)[np.newaxis,:]
 
         return self.houghSpace
 
     def getVisualization(self, scale = None, showMax=False):
         '''
         Produce and return a colormapped image of the histogram produced in computeVotes(),
-        optionally highliting the peak if showMax is True,
+        optionally highliting the peak if showMax is True.
         '''
         houghSpaceGray = (self.houghSpace * 255/self.maxVal) if self.maxVal>0 else self.houghSpace
         houghSpaceColor = cv.applyColorMap(houghSpaceGray.astype(np.uint8), cv.COLORMAP_DEEPGREEN)
@@ -326,6 +343,10 @@ class HoughSpace:
         return houghSpaceColor
 
     def pasteVisualization(self, image, borderColor=(0,128,255), scale = None, showMax=False):
+        '''
+        Pastes the visualization of the Hough space over an image, at the bottom-right corner.
+        It also shows 1D histograms of angles and distances.
+        '''
         houghSpaceColor = self.getVisualization(scale, showMax)
         
         ih, iw, _ = image.shape
