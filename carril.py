@@ -95,11 +95,14 @@ hs = det.HoughSpace()
 annotations = det.SegmentsAnnotator()
 cenitalAnnotations = det.SegmentsAnnotator(thickness=2, colorMap=det.SegmentsAnnotator.colorMapBGR)
 umbralCanny = 160
+printFlag = False
 fld = cv.ximgproc.createFastLineDetector(canny_th1 = umbralCanny, canny_th2 = umbralCanny*3, do_merge=True)
 while(True):
     # video feed
     if(play):
         _, im = video.read()
+        if(not _):
+            break
         if(mustResize):
             im = cv.resize(im, frameSize)
         hui.anotate(im)
@@ -120,12 +123,18 @@ while(True):
     segments = det.Segments(lines)
     segments.computeLengths()   # used for votes
 
-    zenithals = det.zenithalSegmentsFactory(segments, hui.H2, 
-                                referencePoint=(hui.zenithalSize[0]//2, hui.zenithalSize[1]))
+    zenithals = det.Segments(det.projectSegments(segments, hui.H2),
+                             referencePoint=(hui.zenithalSize[0]//2, hui.zenithalSize[1]))
     #zenithals.setReferencePoint((hui.zenithalSize[0]//2, hui.zenithalSize[1]))
     zenithals.computeAnglesAndDistances()   # Hough variables    
     hs.assign2Bins(zenithals)
     hs.computeVotes(zenithals.lengths if userVisualizationOption else segments.lengths)   # alternative: zenithals.lengths
+
+    # Main axes from max vote
+    mainSegmentsIndices = hs.getIndicesFromBin(*hs.maxLoc)
+    mainSegmentIndex = np.argmax(segments.lengths[mainSegmentsIndices])
+    mainZenithalDelta = zenithals.deltas[mainSegmentIndex]/zenithals.lengths[mainSegmentIndex]
+
 
     endProcesst = timer()
 
@@ -133,23 +142,39 @@ while(True):
     startAnnotationt = timer()
 
     imAnnotated = cv.cvtColor(imGray//2, cv.COLOR_GRAY2BGR)
-    annotations.drawSegments(imAnnotated, segments.coords, color=(0,0,255))
+    annotations.drawSegments(imAnnotated, segments.coords)
     winnerValue = hs.maxVal
     winnerBin = hs.maxLoc
     mainSegmentsIndices = hs.getIndicesFromBin(*winnerBin)
-    annotations.drawSegments(imAnnotated, segments.coords[mainSegmentsIndices])
+    annotations.drawSegments(imAnnotated, segments.coords[mainSegmentsIndices], color=(0,255,0))
     cv.putText(imAnnotated, f'Winner bin: {winnerBin} value: {winnerValue}', (10, 20), cv.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255))
+
+    # Draw main axis
+    origin = (imAnnotated.shape[1]//2, (imAnnotated.shape[0]+hui.limit)//2)
+    zenithalOrigin = det.projectSegments(origin, hui.H2, segmentsShape=False, printFlag=printFlag).reshape(-1)
+    zenithalForward = zenithalOrigin - mainZenithalDelta * hs.laneWidth/2
+    zenithalSide = zenithalOrigin + np.array((mainZenithalDelta[1], -mainZenithalDelta[0])) * hs.laneWidth/2
+    mainAxisZenithalSegments = np.array([zenithalOrigin, zenithalForward, zenithalOrigin, zenithalSide]).reshape(-1, 2, 2)
+    mainAxisSegments = det.projectSegments(mainAxisZenithalSegments, hui.H2, inverse=True, printFlag=printFlag)
+    annotations.drawSegments(imAnnotated, mainAxisSegments, color=(255,255,0))
+
+
     cv.imshow('Main segments', imAnnotated)
 
     # zenithal fustrum view
     zenithalIm = cv.warpPerspective(im, hui.H2, hui.zenithalSize)
     cv.drawMarker(zenithalIm, zenithals.referencePoint.astype(np.int32), (0,0,255), cv.MARKER_CROSS, 20, 3)
-    cenitalAnnotations.drawSegments(zenithalIm, zenithals, intensities=zenithals.angles/3.17, 
+    cv.drawMarker(zenithalIm, zenithalOrigin.astype(np.int32), (0,255,0), cv.MARKER_CROSS, 20, 3)
+    cenitalAnnotations.drawSegments(zenithalIm, zenithals, #intensities=zenithals.angles/3.17, 
                                     message= f'FLD: {(endFLDt-startFLDt)*1000:.0f} ms'
                                     f'\nProcess: {(endProcesst-startProcesst)*1000:.0f} ms'
                                     f'\nSegments {str(len(zenithals.coords))}'
                                     f"\nHough votes: {'zenithals' if userVisualizationOption else 'segments'}"
+                                    f'\nMax votes: {winnerValue:.0f}'
                                    )
+    cenitalAnnotations.drawSegments(zenithalIm, zenithals.coords[mainSegmentsIndices], color=(0,255,0))
+    cenitalAnnotations.drawSegments(zenithalIm, zenithals.coords[mainSegmentIndex], color=(0,255,255))
+    cenitalAnnotations.drawSegments(zenithalIm, mainAxisZenithalSegments, color=(255,255,0))
 
     # autoshrink
     while(zenithalIm.shape[0] > 700):
@@ -162,6 +187,7 @@ while(True):
     #print(f'FLD: {endFLDt-startFLDt:.3f} s, Process: {endProcesst-startProcesst:.3f} s, Annotate: {endAnnotationt-startAnnotationt:.3f} s')
 
     # user keyboard
+    printFlag = False
     key = cv.waitKey(30)
     if(key != -1):
         match key:
@@ -177,14 +203,25 @@ while(True):
                 userVisualizationOption += 1
                 userVisualizationOption %= 2
             case 'p':
+                printFlag = True
                 print('image shape:', im.shape)
                 print('roiPoly', hui.roiPoly, type(hui.roiPoly), type(hui.roiPoly[0]), type(hui.roiPoly[0][0]))
                 print(f"winnerBin: {winnerBin}")
-                print(f"mainSegmentsIndices: {len(mainSegmentsIndices)}")
-                print(*mainSegmentsIndices)
-                print('hs.houghSpace:')
-                print(hs.houghSpace)
-                print('angleBinsIndices, distanceBinsIndices:')
+                #print(f"mainSegmentsIndices: {len(mainSegmentsIndices)}")
+                print(f'H2 det: {np.linalg.det(hui.H2)}, \nH2: {hui.H2}')
+                print(f'H2 inv: {np.linalg.inv(hui.H2)}')
+                print(f'origin: {origin}')
+                print(f'zenithalOrigin: {zenithalOrigin}')
+                print(f'zenithalForward: {zenithalForward}')
+                print(f'zenithalSide: {zenithalSide}')
+                print(f'mainAxisSegments: {mainAxisZenithalSegments}')
+                print(f'mainAxisSegmentsPerspective: {mainAxisSegments}')
+                #print(*mainSegmentsIndices)
+                print(f'angle histogram: {hs.angleHistogram}')
+                print(f'lane histogram: {hs.laneHistogram}')
+                #print('hs.houghSpace:')
+                #print(hs.houghSpace)
+                #print('angleBinsIndices, distanceBinsIndices:')
                 '''
                 for a,b,c,d in zip(bins.angleBinsIndices, bins.distanceBinsIndices, zenithals.angles, zenithals.distances):
                     print(a,b,c,d)

@@ -72,6 +72,10 @@ class Hui:
     # Cuadrilátero, comenzando por vértice superior izquierdo, en sentido horario
     # Si se proporciona una homografía, la usa para obtener horizonte y tope
     def calculateRoi(self, H = None):
+        '''
+        H is the homography transforming the trapezoid into a square.
+        H2 is the modify homography to get the zenithal view, a wider view than the prior.
+        '''
         if(H is not None):
             # Homografía suministrada, se recalculan horizonte y tope
             self.H = H.astype(np.float32)

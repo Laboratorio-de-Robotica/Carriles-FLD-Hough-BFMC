@@ -118,61 +118,58 @@ class Segments:
         self.computeAngles()
         self.computeDistances()
 
-def projectSegments(segments, H, inverse=False, segmentsShape=True, printFlag=False):
+def projectSegments(segments, H, segmentsShape=True):
     '''
     Projects the given segments with the given homography H of shape (3,3).
     P' = H * P
 
-    Parameters:
-    - inverse: if True, H is considered to be the inverse of the projection.
-    - segmentsShape: if True, the result is reshaped to the original segments shape.
-    
     Segments are pairs of points.  
     To projects points instead of segments (an odd number of points, like only one)
     use segmentsShape=False.
     '''
     if(isinstance(segments, Segments)):
         segments = segments.coords
-    elif(not isinstance(segments, np.ndarray)):
-        segments = np.array(segments)
     
     # Points ndarray
     points = segments.reshape((-1,2)) # Shape 2n,2
-    if(printFlag):
-        print(f'points: {points}')
 
     # Homogeneous coordinates conversion
     ones = np.ones((points.shape[0],1), np.float32)            # Shape 2n,1
     homogeneousPoints = np.concatenate((points, ones), axis=1) # Shape 2n,3
-    if(printFlag):
-        print(f'homogeneousPoints: {homogeneousPoints}')
-
-    # H must be transpose, because H is thought to multiply a column vector, and these are row vectors.
-    # Unless inverse is True: H is homogeneous, so transpose and inverse accomplish the same purpose.
-    if(not inverse):
-        H = H.transpose()
-    else:
-        H = np.linalg.inv(H).transpose()
-
-    if(printFlag):
-        print(f'H: {H}')
 
     # Projection
-    projectedHomogeneousPoints = homogeneousPoints @ H # Shape 2n,3
-
-    if(printFlag):
-        print(f'projectedHomogeneousPoints: {projectedHomogeneousPoints}')
-
+    projectedHomogeneousPoints = homogeneousPoints @ H.transpose() # Shape 2n,3
 
     # Back to vector space
     projectedSegments = (projectedHomogeneousPoints[:,:2]/projectedHomogeneousPoints[:,2:])
     if(segmentsShape):
         projectedSegments.reshape((-1,2,2)) # Shape n,2,2
 
-    if(printFlag):
-        print(f'projectedSegments: {projectedSegments}')
-
     return projectedSegments
+
+def zenithalSegmentsFactory(points, H, referencePoint=None):
+    '''
+    Creates a Segments object with a zenithal projection of the given segments,
+    apllying the given homography H of shape (3,3).
+    The number of segments remains the same.
+    '''
+    if(isinstance(points, Segments)):
+        points = points.coords
+    
+    # Points ndarray
+    points = points.reshape((-1,2)) # Shape 2n,2
+
+    # Homogeneous coordinates conversion
+    ones = np.ones((points.shape[0],1), np.float32)            # Shape 2n,1
+    homogeneousPoints = np.concatenate((points, ones), axis=1) # Shape 2n,3
+
+    # Projection
+    projectedHomogeneousPoints = homogeneousPoints @ H.transpose() # Shape 2n,3
+
+    # Normalización y reducción dimensional
+    projectedSegments = (projectedHomogeneousPoints[:,:2]/projectedHomogeneousPoints[:,2:]).reshape((-1,2,2)) # Shape n,2,2
+
+    return Segments(projectedSegments, referencePoint=referencePoint)
 
 class SegmentsAnnotator:
     '''
@@ -222,7 +219,7 @@ class SegmentsAnnotator:
         scalar = int(intensity*256)
         return (scalar, scalar, scalar)
 
-    def __init__(self, color=(0,0,255), thickness=1, withPoints = False, offset=(0,0), scale=1.0, colorMap = colorMapBGR):
+    def __init__(self, color=(0,255,0), thickness=1, withPoints = False, offset=(0,0), scale=1.0, colorMap = colorMapBGR):
         '''
         Constructor
         Sets default values for drawing segments over an image.

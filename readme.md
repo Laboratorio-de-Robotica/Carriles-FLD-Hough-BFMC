@@ -40,3 +40,10 @@ Para probar conviene descargar directamente el video por defecto:
 `carril.py` es un ejemplo de uso de estas bibliotecas.
 
 El documento [Carriles Hough](https://docs.google.com/document/d/1SYC7nZT3Y_Wc-rTGiAnix9lpgIxPOmTWTjAN7liq6cs/edit?usp=drive_link) brinda el fundamento teórico de este proyecto.
+
+# Versiones anteriores
+
+Los archivos numerados corresponden a versiones anteriores pero que funcionan, y están destinados a ser eliminados.  Por ejemplo, ya se eliminaron carril1.py a carril4.py.
+
+- carril5.py y carril6.py: dos implementaciones con cambios profundos, carril.py se basa en carril6.py
+- detector1.py: versión anterior de detector.py, usada por carril5.py
