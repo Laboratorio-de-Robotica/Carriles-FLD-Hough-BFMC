@@ -29,7 +29,15 @@ class Segments:
     - ndarray [n,1,4] con segmentos de Fast Line Detector
     - Segments object, copia coords del objecto
     '''
-    def __init__(self, segs):
+    def __init__(self, segs, referencePoint=None):
+        '''
+        Constructor
+        Parameters:
+        segs (np.ndarray or Segments or None): The segments to initialize the object with. 
+            - If segs is a numpy ndarray, it is a segments list from FLD with shape (n, 1, 4) where n is the number of segments.
+            - If segs is an instance of Segments, it will copy the segments from the given Segments object.
+            - If segs is None, an empty Segments object will be created, if you want to fill it yourself.
+        '''
         if(segs is None):
             # objeto vacío, sin segmentos todavía
             self.n = 0
@@ -44,22 +52,41 @@ class Segments:
             self.n = segs.n
             self.coords = segs.coords
 
-        self.setReferencePoint((0, 0))
+        if(referencePoint is not None):
+            self.setReferencePoint(referencePoint)
 
     
     def setReferencePoint(self, point):
+        '''
+        Set the reference point for Hough distance calculation.
+        It doesn't have any other purpose.
+        You must explicitly call this method to set the reference point.
+        Computing distances without a reference point will raise an exception,
+        because having a random referencePoint is worse.
+        Parameters:
+        point (tuple): The reference point as a 2D tuple.
+        '''
         self.referencePoint = np.array(point, dtype=np.float32)
 
     def computeDeltas(self):
+        '''
+        Deltas are (dx,dy), second point minus first point.
+        '''
         self.deltas = self.coords[:,1,:] - self.coords[:,0,:]    # Shape n,2, formato #segmento, (dx,dy), dx=x1-x0
 
-    def normalizeDeltas(self):
+    def tidyupDeltas(self):
+        '''
+        Rotates 180º if necessary to have dy >= 0, so normal vectors are pointing up.
+        Useful for computing distances.
+        '''
         if(not hasattr(self, 'deltas')):
             self.computeDeltas()
         self.deltas = np.where(self.deltas[:,1:]<0, -self.deltas, self.deltas)  # change sign if dy negative
-        #self.deltas[self.deltas[:,1]<0] = -self.deltas[...]
 
     def computeLengths(self):
+        '''
+        Computes deltas and lengths from deltas.
+        '''
         if(not hasattr(self, 'deltas')):
             self.computeDeltas()
         self.lengths = np.linalg.norm(self.deltas, axis=1)           # Shape n
@@ -76,6 +103,11 @@ class Segments:
         self.angles = np.arctan2(self.deltas[:,1], self.deltas[:,0])    # arctan(y/x); Shape n, angles in +-pi, 0 for horizontal
 
     def computeDistances(self):
+        '''
+        Computes distances from referencePoint to the segments, with sign.
+        Not setting the referencePoint will raise an exception.
+        If deltas are not tidy up, distance signs will depend on deltas.
+        '''
         if(not hasattr(self, 'lengths')):
             self.computeLengths()
         self.normalUnityVectors = np.empty_like(self.deltas)
@@ -83,15 +115,17 @@ class Segments:
         self.normalUnityVectors[:,1] = -self.deltas[:,0] / self.lengths
         linePoints = (self.coords[:,0,:] - self.referencePoint)
         self.distances = (self.normalUnityVectors * linePoints).sum(axis=1)
-        #self.distances = np.sum(self.normalUnityVectors * (self.coords[:,0,:] - self.referencePoint), axis=1)
-        #self.distances = np.sum((self.deltas[:,::-1]/self.lengths[:,None]) * (self.coords[:,0,:] - self.referencePoint), axis=1)
 
     def computeAnglesAndDistances(self):
-        self.normalizeDeltas()
+        '''
+        It executes it all:
+        Computes angles, distances, lengths, deltas and then tidy up deltas.
+        '''
+        self.tidyupDeltas()
         self.computeAngles()
         self.computeDistances()
 
-def zenithalSegmentsFactory(points, H):
+def zenithalSegmentsFactory(points, H, referencePoint=None):
     '''
     Usa puntos de un ndarray o de un objeto Segments, 
     aplica la transformación homogénea H [3,3], 
@@ -114,7 +148,7 @@ def zenithalSegmentsFactory(points, H):
     # Normalización y reducción dimensional
     projectedSegments = (projectedHomogeneousPoints[:,:2]/projectedHomogeneousPoints[:,2:]).reshape((-1,2,2)) # Shape n,2,2
 
-    return Segments(projectedSegments)
+    return Segments(projectedSegments, referencePoint=referencePoint)
 
 '''
 Annotator is a class to draw segments over an image.
@@ -271,6 +305,10 @@ class HoughSpace:
 
         self.maxLoc = np.unravel_index(np.argmax(self.houghSpace), self.houghSpace.shape)
         self.maxVal = self.houghSpace[self.maxLoc]
+
+        self.angleHistogram = np.sum(self.houghSpace, axis=1)
+        self.laneZone = np.sum(self.houghSpace[self.centralAngleBin-1:self.centralAngleBin+2], axis=0)[np.newaxis,:]
+
         return self.houghSpace
 
     def getVisualization(self, scale = None, showMax=False):
@@ -297,4 +335,15 @@ class HoughSpace:
             cv.rectangle(image, (iw-hw-2, ih-hh-2), (iw-1, ih-1), borderColor)
             cv.line(image, (iw-hw//2-1, ih-hh-2), (iw-hw//2-1, ih-1), borderColor)
             cv.line(image, (iw-hw-2, ih-hh//2-1), (iw- 1, ih-hh//2-1), borderColor)
+
+        if(scale is not None):
+            angleHistogram = cv.resize(self.angleHistogram, None, fx=scale, fy=scale, interpolation=cv.INTER_NEAREST)
+            laneZone = cv.resize(self.laneZone, None, fx=scale, fy=scale, interpolation=cv.INTER_NEAREST)
+        else:
+            angleHistogram = self.angleHistogram
+            laneZone = self.laneZone
+        
+        image[-hh-1:-1, -hw-10:-hw-10+angleHistogram.shape[1]] = angleHistogram[:,:,np.newaxis]
+        image[-hh-3-laneZone.shape[0]:-hh-3, -hw-1:-1] = laneZone[:,:,np.newaxis]
+
         return houghSpaceColor

@@ -5,8 +5,6 @@ import HUI
 import argparse
 from timeit import default_timer as timer
 
-#Setup
-
 np.set_printoptions(precision=1)
 
 parser = argparse.ArgumentParser()
@@ -22,22 +20,9 @@ if(not args.save or not args.load):
     if(not args.load):
         args.load = filename
 
-# Help
-print(
-    'Keys:'
-    '\n  ESC: exit'
-    '\n  SPACE: play/pause'
-    '\n  v: change visualization'
-    '\n  p: print debug info'
-    '\n  s: save homography'
-    '\n  l: load homography'
-    '\n  by default save and load use the same file name as the video, but with .yaml extension:'
-    )
-
 # Util
-play = True # play/pause flag
+play = True # bandera de control play/pausa
 fs = None   # yaml
-userVisualizationOption = 0 # user cycles these open options
 
 # Video
 video = cv.VideoCapture(args.video)
@@ -84,12 +69,16 @@ load()
 hui.zenithalSquareSide = 250
 hui.calculateRoi()
 
+# Bucle principal
+
 
 '''
+Bins:
 - square side 250px
 - lane: about 220px
 - lane line: 10px
-- angles 0..pi
+- angles 0..pi: 10 bins
+- distances -500..+500: 20 bins
 '''
 hs = det.HoughSpace()
 annotations = det.SegmentsAnnotator()
@@ -120,16 +109,16 @@ while(True):
     segments = det.Segments(lines)
     segments.computeLengths()   # used for votes
 
-    zenithals = det.zenithalSegmentsFactory(segments, hui.H2, 
-                                referencePoint=(hui.zenithalSize[0]//2, hui.zenithalSize[1]))
-    #zenithals.setReferencePoint((hui.zenithalSize[0]//2, hui.zenithalSize[1]))
+    zenithals = det.zenithalSegmentsFactory(segments, hui.H2)
+    zenithals.setReferencePoint((hui.zenithalSize[0]//2, hui.zenithalSize[1]))
     zenithals.computeAnglesAndDistances()   # Hough variables    
     hs.assign2Bins(zenithals)
-    hs.computeVotes(zenithals.lengths if userVisualizationOption else segments.lengths)   # alternative: zenithals.lengths
+    hs.computeVotes(segments.lengths)
 
+    #houghSpaceZenithalWeigthed = bins.makeHoughSpace(zenithals.lengths, 'Hough space zenithal weigth')
     endProcesst = timer()
 
-    # Annotations & visualization
+
     startAnnotationt = timer()
 
     imAnnotated = cv.cvtColor(imGray//2, cv.COLOR_GRAY2BGR)
@@ -143,13 +132,9 @@ while(True):
 
     # zenithal fustrum view
     zenithalIm = cv.warpPerspective(im, hui.H2, hui.zenithalSize)
-    cv.drawMarker(zenithalIm, zenithals.referencePoint.astype(np.int32), (0,0,255), cv.MARKER_CROSS, 20, 3)
+    cv.drawMarker(zenithalIm, zenithals.referencePoint.astype(np.int32), (0,0,255), cv.MARKER_CROSS, 20, 2)
     cenitalAnnotations.drawSegments(zenithalIm, zenithals, intensities=zenithals.angles/3.17, 
-                                    message= f'FLD: {(endFLDt-startFLDt)*1000:.0f} ms'
-                                    f'\nProcess: {(endProcesst-startProcesst)*1000:.0f} ms'
-                                    f'\nSegments {str(len(zenithals.coords))}'
-                                    f"\nHough votes: {'zenithals' if userVisualizationOption else 'segments'}"
-                                   )
+                                    message= f'FLD: {endFLDt-startFLDt:.3f} s\nProcess: {endProcesst-startProcesst:.3f} s\nSegments {str(len(zenithals.coords))}'),
 
     # autoshrink
     while(zenithalIm.shape[0] > 700):
@@ -159,6 +144,7 @@ while(True):
     cv.imshow('zenithal wide', zenithalIm)
 
     endAnnotationt = timer()
+
     #print(f'FLD: {endFLDt-startFLDt:.3f} s, Process: {endProcesst-startProcesst:.3f} s, Annotate: {endAnnotationt-startAnnotationt:.3f} s')
 
     # user keyboard
@@ -173,9 +159,6 @@ while(True):
         match chr(key):
             case ' ':
                 play = not play
-            case 'v':
-                userVisualizationOption += 1
-                userVisualizationOption %= 2
             case 'p':
                 print('image shape:', im.shape)
                 print('roiPoly', hui.roiPoly, type(hui.roiPoly), type(hui.roiPoly[0]), type(hui.roiPoly[0][0]))
@@ -195,7 +178,11 @@ while(True):
             case 'l':
                 load()
 
-# Close and exit
+
+
+
+
 if(fs):
     fs.release()
+
 cv.destroyAllWindows()
