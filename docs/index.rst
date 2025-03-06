@@ -1,5 +1,5 @@
-Picking U2Net
-=============
+Carriles-FLD-Hough-BFMC
+=======================
 
 .. toctree::
   :maxdepth: 4

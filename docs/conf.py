@@ -6,7 +6,7 @@
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = 'Picking U2Net'
+project = 'Carriles FLD Hough BFMC'
 copyright = '2025, Alejandro Silvestri'
 author = 'Alejandro Silvestri'
 release = '0.1'

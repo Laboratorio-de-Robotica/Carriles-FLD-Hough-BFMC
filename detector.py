@@ -12,38 +12,42 @@ Contiene 3 clases:
 
 """
 
+from __future__ import annotations  # sólo para hint Segments en init
 import numpy as np
 import cv2 as cv
 import math
 
 class Segments:
     """
-    A Segments object represent a set of lines (straight segments), stored in coords property, as an array of segments.
-    Each segment is a pair of 2D points.
-    All arrays are ndarray with main dimension of n.
+    El objeto Segments representa un conjunto de líneas (segmentos rectos), almacenados en la propiedad coords, como un array de segmentos.
+    Cada segmento es un par de puntos 2D.
+    Todos los arrays son ndarray con dimensión principal de n.
 
-    Segments properties:
+    Propiedades de Segments:
 
-    n: number of segments
-    referencePoint: 2D point, origin for Hough distance calculation
+    n: número de segmentos
+    referencePoint: punto 2D, origen para el cálculo de la distancia de Hough
 
-    ndarray of n rows:
+    ndarray de n filas:
     coords: ndarray de segmentos detectados [n,2,2], indefinido en un objeto vacío, se define una vez y no debería cambiar
     deltas: (dx,dy)
-    lengths: segments lengths
-    distances: Hough distances to reference point
-    angles: segments angles
+    lengths: longitudes de los segmentos
+    distances: distancias de Hough al punto de referencia
+    angles: ángulos de los segmentos
+    normalUnityVectors: vectores unitarios normales a los segmentos
     """
 
     def __init__(self, segs: Segments|np.ndarray|None, referencePoint:tuple|None=None):
         """
         Constructor
+
         Arguments:
-        segs (np.ndarray or Segments or None): The segments to initialize the object with. 
-            - If segs is a numpy ndarray, it is a segments list from FLD with shape (n, 1, 4) where n is the number of segments.
-            - If segs is an instance of Segments, it will copy the segments from the given Segments object.
-            - If segs is None, an empty Segments object will be created, if you want to fill it yourself.
-        referencePoint (tuple): The reference point for Hough distance calculation.
+            segs (np.ndarray or Segments or None): Los segmentos para poblar el objeto. 
+                - Si segs es un ndarray de numpy, es una lista de segmentos de FLD con forma (n, 1, 4) donde n es el número de segmentos.
+                - Si segs es una instancia de Segments, copiará los segmentos del objeto Segments dado.
+                - Si segs es None, se creará un objeto Segments vacío, si quieres rellenarlo tú mismo.
+            referencePoint (tuple): El punto de referencia para el cálculo de la distancia de Hough.
+
         """
 
         if(segs is None):
@@ -66,28 +70,30 @@ class Segments:
     
     def setReferencePoint(self, point:tuple):
         """
-        Set the reference point for Hough distance calculation.
-        It doesn't have any other purpose.
-        You must explicitly call this method to set the reference point.
-        Computing distances without a reference point will raise an exception,
-        because having a random referencePoint is worse.
+        Establece el punto de referencia para el cálculo de la distancia de Hough.
+        No tiene otro propósito.
+        Debes llamar explícitamente a este método para establecer el punto de referencia.
+        Calcular distancias sin un punto de referencia generará una excepción,
+        porque tener un referencePoint aleatorio es peor.
+
         Arguments:
-            point (tuple): The reference point as a 2D tuple.
+            point (tuple): El punto de referencia como tupla 2D.
+
         """
 
         self.referencePoint = np.array(point, dtype=np.float32)
 
     def computeDeltas(self):
         """
-        Deltas are (dx,dy), second point minus first point.
+        Deltas son (dx,dy), segundo punto menos primer punto.
         """
 
         self.deltas = self.coords[:,1,:] - self.coords[:,0,:]    # Shape n,2, formato #segmento, (dx,dy), dx=x1-x0
 
     def tidyupDeltas(self):
         """
-        Rotates 180º if necessary to have dy >= 0, so normal vectors are pointing down (positive y points down).
-        Useful for computing distances.
+        Rota 180º si es necesario para tener dy >= 0, de modo que los vectores normales apunten hacia abajo (y positivo apunta hacia abajo).
+        Útil para calcular distancias.
         """
 
         if(not hasattr(self, 'deltas')):
@@ -96,7 +102,7 @@ class Segments:
 
     def computeLengths(self):
         """
-        Computes deltas and lengths from deltas.
+        Calcula las longitudes a partir de los deltas.
         """
 
         if(not hasattr(self, 'deltas')):
@@ -105,10 +111,10 @@ class Segments:
 
     def computeAngles(self):
         """
-        Computes angles from deltas, with arctan2, so angle is in [-pi, pi].
-        Results are stored in angles property.
-        If deltas are normalized (dy>=0), angles are in [0, pi].
-        It doesn't take arguments nor return any value.
+        Calcula los ángulos a partir de los deltas, con arctan2, por lo que el ángulo está en [-pi, pi].
+        Los resultados se almacenan en la propiedad angles.
+        Si los deltas están normalizados (dy>=0), los ángulos están en [0, pi].
+        No toma argumentos ni devuelve ningún valor.
         """
 
         if(not hasattr(self, 'deltas')):
@@ -117,9 +123,9 @@ class Segments:
 
     def computeDistances(self):
         """
-        Computes distances from referencePoint to the segments, with sign.
-        Not setting the referencePoint will raise an exception.
-        If deltas are not tidy up, distance signs will depend on deltas.
+        Computa distancias desde referencePoint a los segmentos, con signo.
+        No establecer referencePoint generará una excepción.
+        Si los deltas no están ordenados, los signos de las distancias dependerán de los deltas.
         """
 
         if(not hasattr(self, 'lengths')):
@@ -132,8 +138,8 @@ class Segments:
 
     def computeAnglesAndDistances(self):
         """
-        It executes it all:
-        Computes angles, distances, lengths, deltas and then tidy up deltas.
+        Ejecuta todo:
+        Calcula ángulos, distancias, longitudes, deltas y luego ordena los deltas.
         """
 
         self.tidyupDeltas()
@@ -142,23 +148,24 @@ class Segments:
 
 def projectSegments(segments:Segments|np.ndarray|tuple, H:np.ndarray, inverse:bool=False, segmentsShape:bool=True, printFlag:bool=False)->np.ndarray:
     """
-    Projects the given segments with the given homography H of shape (3,3).
+    Proyecta los segmentos dados con la homografía H de forma (3,3).
 
         P' = H * P
     
-    Segments are pairs of points.  
-    To projects points instead of segments (an odd number of points, like only one)
+    Los segmentos son pares de puntos.
+    Para proyectar puntos en lugar de segmentos (un número impar de puntos, como solo uno)
     use segmentsShape=False.
 
     Arguments:
-    - segments: Segments object or ndarray of segments.
-    - H: homography matrix.
-    - inverse: if True, H is considered to be the inverse of the projection.
-    - segmentsShape: if True, the result is reshaped to the original segments shape.
-    - printFlag: if True, prints intermediate results.
+    - segments: conjunto de segmentos.
+    - H: matriz de homografía.
+    - inverse: si es True, H se considera la inversa de la proyección.
+    - segmentsShape: si es True, el resultado se remodela a la forma original de los segmentos.
+    - printFlag: si es True, imprime resultados intermedios.
 
     Returns:
-    - ndarray of projected segments.
+    - ndarray de segmentos proyectados.
+
     """
 
     if(isinstance(segments, Segments)):
@@ -206,22 +213,22 @@ def projectSegments(segments:Segments|np.ndarray|tuple, H:np.ndarray, inverse:bo
 
 class SegmentsAnnotator:
     """
-    Annotator is a class to draw segments over an image.
+    Clase para dibujar segmentos sobre una imagen.
     """
 
     @staticmethod
     def colorMapBGR(intensity:float)->tuple:
         """
-        Return an BGR color from an intensity in the range [0.0,1.0),
-        with bright 255 - primary and secondary colors.
-        It maps colors in a cyclic pattern: color for 0,999 is neighbour to color for 0.0.
-        Adopts a pallete of 765 colors.
+        Devuelve un color BGR a partir de una intensidad en el rango [0.0,1.0),
+        con colores primarios y secundarios brillantes 255.
+        Mapea los colores en un patrón cíclico: el color para 0,999 es vecino al color para 0.0.
+        Adopta una paleta de 765 colores.
 
         Arguments:
-        - intensity: intensity in the range [0.0,1.0).
+        - intensity: intensidad en el rango [0.0,1.0).
 
         Returns:
-        - tuple with BGR color.
+        - tupla con color BGR.
         """
 
         decimal, integer = math.modf((intensity % 1)*3)
@@ -239,16 +246,17 @@ class SegmentsAnnotator:
     @staticmethod
     def colorMapYMC(intensity:float)->tuple:
         """
-        Return an BGR color from an intensity in the range [0.0,1.0),
-        with bright 510 - secondary and tertiary colors.
-        It maps colors in a cyclic pattern: color for 0,999 is neighbour to color for 0.0.
-        Adopts a pallete of 765 colors.
+        Devuelve un color BGR a partir de una intensidad en el rango [0.0,1.0),
+        con colores brillantes 255.
+        Mapea los colores en un patrón cíclico: el color para 0,999 es vecino al color para 0.0.
+        Adopta una paleta de 765 colores.
 
         Arguments:
-        - intensity: intensity in the range [0.0,1.0).
+        - intensity: intensidad en el rango [0.0,1.0).
 
         Returns:
-        - tuple with BGR color.
+        - tupla con color BGR.
+
         """
 
         decimal, integer = math.modf((intensity % 1)*3)
@@ -270,15 +278,15 @@ class SegmentsAnnotator:
     def __init__(self, color:tuple=(0,0,255), thickness:float=1, withPoints:bool = False, offset:tuple=(0,0), scale:float=1.0, colorMap:function=colorMapBGR):
         """
         Constructor
-        Sets default values for drawing segments over an image.
+        Establece valores predeterminados para dibujar segmentos sobre una imagen.
 
         Arguments:
-        - color: color to use for annotation.
-        - thickness: thickness of the lines.
-        - withPoints: whether to draw the endpoints of the segments.
-        - offset: offset to apply to the segments.
-        - scale: scale factor to apply to the segments.
-        - colorMap: function to map intensities to colors.
+        - color: color para la anotación.
+        - thickness: grosor de las líneas.
+        - withPoints: si se deben dibujar los puntos finales de los segmentos.
+        - offset: desplazamiento para aplicar a los segmentos.
+        - scale: factor de escala para aplicar a los segmentos.
+        - colorMap: función para mapear intensidades a colores.
         """
 
         self.color = color
@@ -288,24 +296,24 @@ class SegmentsAnnotator:
         self.scale = scale
         self.colorMap = colorMap
 
-    def drawSegments(self, image, segments, intensities=None, message=None, color=None, thickness=None, colorMap=None, withPoints = None, offset=None, scale=None):
+    def drawSegments(self, image:np.ndarray, segments:Segments, intensities:np.ndarray|None=None, message:str|None=None, color:tuple|None=None, thickness:int|None=None, colorMap:function|None=None, withPoints:bool|None=None, offset:tuple|None=None, scale:float|None=None)->np.ndarray:
         """
-        Annotates segments over an image.
-        If intensities is provided, color is ignored and colorMap is used.
-        If message is provided, it is written on the bottom-left corner.
-        Other arguments let the user override the default values.
+        Dibuja los segmentos sobre una imagen.
+        Si se proporcionan intensidades, el color se ignora y se utiliza colorMap.
+        Si se proporciona un mensaje, se escribe en la esquina inferior izquierda.
+        Otros argumentos permiten al usuario anular los valores predeterminados.
 
         Args:
-            image (ndarray): Image to annotate.
-            segments (Segments): Segments to annotate.
-            intensities (ndarray): Intensities to map to colors, in the range [0..1).  Same size as segments.
-            message (str): Message to write on the image.
-            color (tuple): Color to use for annotation, used if intensities are not provided.
-            thickness (int): Thickness of the lines.
-            colorMap (function): Function to map intensities to colors.
-            withPoints (bool): Whether to draw the endpoints of the segments.
-            offset (tuple): Offset to apply to the segments.
-            scale (float): Scale factor to apply to the segments
+            image: Imagen para anotar.
+            segments: Segmentos a dibujar.
+            intensities: Intensidades para mapear a colores, en el rango [0..1). Mismo tamaño que segments.
+            message (str): Mensaje para escribir en la imagen.
+            color (tuple): Color para la anotación, utilizado si no se proporcionan intensidades.
+            thickness (int): Grosor de las líneas.
+            colorMap (function): Función para mapear intensidades a colores.
+            withPoints (bool): Si se deben dibujar los puntos finales de los segmentos.
+            offset (tuple): Desplazamiento para aplicar a los segmentos.
+            scale (float): Factor de escala para aplicar a los segmentos.
 
         """
 
@@ -346,21 +354,23 @@ class SegmentsAnnotator:
             for i, textLine in enumerate(textLines):
                 cv.putText(image, textLine, (10, image.shape[0]-5-20*(n-i-1)), cv.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255))
 
+        return image
+
 class HoughSpace:
-    def __init__(self, angleBins=10, maxDistanceAsLanes=4, laneBins=4, laneWidth=210):
+    def __init__(self, angleBins:int=10, maxDistanceAsLanes:int=4, laneBins:int=4, laneWidth:int=210):
         """
         Constructor
-        Defines quantity of bins, factor from distances and angles to it corresponding bins.
-        angleBins should be even if you want to look into perpendicular angles.
-        Angles range from 0 to pi, both ends are horizontal, so pi/2 is vertical.
-        distanceBins is odd, so zero distance is in the middle, 
-        to the left go negative distances, to the right go positive distances.
+        Define la cantidad de bins, el factor de distancias y ángulos a los bins correspondientes.
+        angleBins debe ser par si quieres mirar ángulos perpendiculares.
+        Los ángulos van de 0 a pi, ambos extremos son horizontales, por lo que pi/2 es vertical.
+        distanceBins debe ser impar, por lo que la distancia cero está en el medio,
+        a la izquierda van las distancias negativas, a la derecha las positivas.
 
         Arguments:
-        - angleBins: number of bins for angles from 0 to pi, p/2 is vertical, even number recommended
-        - maxDistanceAsLanes: far edge for distances bins, in lanes
-        - laneBins: number of bins in one lane
-        - laneWidth: width of a lane in pixels
+        - angleBins: número de bins para ángulos de 0 a pi, p/2 es vertical, se recomienda número par.
+        - maxDistanceAsLanes: borde lejano para los bins de distancias, en carriles.
+        - laneBins: número de bins en un carril.
+        - laneWidth: ancho de un carril en píxeles.
         """
 
         self.angleBins = angleBins
@@ -376,12 +386,12 @@ class HoughSpace:
         self.referenceAngleBin = self.centralAngleBin
         self.distanceBins = 2 * self.centralDistanceBin + 1
 
-    def assign2Bins(self, segments):
+    def assign2Bins(self, segments:Segments):
         """
-        Two parallel arrays of indices are created from segments angles and distances,
-        pointing to the corresponding bins in the Hough space.
-        They are clipped, so values out of range are set to the nearest valid value.
-        This affects distanceIndices, the last bins at both ends will add all the distances greater than maxDistanceInPixels.
+        Dos arrays paralelos de índices se crean a partir de los ángulos y distancias de los segmentos,
+        apuntando a los bins correspondientes en el espacio de Hough.
+        Se recortan, por lo que los valores fuera de rango se establecen en el valor válido más cercano.
+        Esto afecta a distanceIndices, los últimos bins en ambos extremos agregarán todas las distancias mayores que maxDistanceInPixels.
         """
 
         self.angleIndices = np.clip((segments.angles * self.angle2index).astype(int), 0, self.angleBins-1)
@@ -389,31 +399,30 @@ class HoughSpace:
 
     def getIndicesFromBin(self, angleIndex:int, distanceIndex:int)->np.ndarray:
         """
-        Get the indices of elements in the bin that match the given angle and distance bins.
+        Devuelve los índices de los elementos en el bin que coinciden con los bins de ángulo y distancia dados.
 
         Arguments:
-        - angleIndex: the angle bin index.
-        - distanceIndex: the distance bin index.
+        - angleIndex: el índice en rangos de ángulo.
+        - distanceIndex: el índice en rangos de distancia.
 
         Returns:
-        - indices of elements in the bin.
+        - indices: array de índices de elementos en el bin.
         """
 
         return np.argwhere(np.logical_and(self.angleIndices == angleIndex, self.distanceIndices == distanceIndex)).reshape(-1)
 
     def computeVotes(self, votes:np.ndarray)->np.ndarray:
         """
-        Populates the Hough space.
-        votes is a parallel array (same size as segments) with the votes for each segment.
-        It often is segments.lengths, but can be any other value.
-        If you don't want weighted votes but only counted votes, you can use votes=1.
-        It also computes 1D histrogram for angles, and 1D histogram for distances near the central angle bin.
+        Puebla el espacio de Hough.
+        Votes es un array paralelo (del mismo tamaño que segments) con los votos para cada segmento.
+        Si no quieres votos ponderados sino solo votos contados, puedes usar votes=1.
+        También calcula el histograma 1D para ángulos y el histograma 1D para distancias cerca del bin de ángulo central.
 
         Arguments:
-        - votes: array of votes for each segment.
+        - votes: array de votos para cada segmento.
 
         Returns:
-        - the Hough space.
+        - el espacio de Hough.
         """
 
         self.houghSpace = np.zeros((self.angleBins, self.distanceBins), np.float32)
@@ -427,28 +436,28 @@ class HoughSpace:
 
         return self.houghSpace
 
-    def computeAngleHistogram(self):
+    def computeAngleHistogram(self)->np.ndarray:
         """
-        It needs self.houghSpace to be computed.
+        Requiere que self.houghSpace esté calculado.
 
         Returns:
-        - the 1D angle histogram.
+        - el histograma 1D de ángulos.
         """
 
         self.angleHistogram = np.sum(self.houghSpace, axis=1)
         return self.angleHistogram
 
-    def computeLaneHistogram(self, referenceAngleBin=None)->np.ndarray:
+    def computeLaneHistogram(self, referenceAngleBin:int|None=None)->np.ndarray:
         """
-        Computes and returns the 1D histogram of distance, only in the referenceAngleBin neighborhood.
-        Keep it in self.laneHistogram.
-        Given referenceAngleBin is registered in self.referenceAngleBin.
+        Computa y devuelve el histograma 1D de distancia, solo en el vecindario de referenceAngleBin.
+        Lo registra en self.laneHistogram.
+        El referenceAngleBin dado se registra en self.referenceAngleBin.
 
         Arguments:
-        - referenceAngleBin: the reference angle bin.
+        - referenceAngleBin: el rango de ángulos de referencia.
 
         Returns:
-        - the 1D lane histogram.
+        - el histograma 1D de carriles.
         """
 
         if(referenceAngleBin is not None):
@@ -459,14 +468,14 @@ class HoughSpace:
 
     def getVisualization(self, scale:float=None, showMax:bool=False)->np.ndarray:
         """
-        Produce and return a colormapped image of the histogram produced in computeVotes(),
-        optionally highliting the peak if showMax is True.
+        Produce y devuelve una imagen de color mapeado del histograma producido en computeVotes(),
+        opcionalmente resaltando el pico si showMax es True.
 
         Arguments:
-        - scale: scale factor for the image.
+        - scale: factor de escala para la imagen.
 
         Returns:
-        - the visualization of the Hough space.
+        - la visualización del espacio de Hough.
         """
 
         houghSpaceGray = (self.houghSpace * 255/self.maxVal) if self.maxVal>0 else self.houghSpace
@@ -480,17 +489,17 @@ class HoughSpace:
 
     def pasteVisualization(self, image:np.ndarray, borderColor:tuple=(0,128,255), scale:float|None=None, showMax:bool=False)->np.ndarray:
         """
-        Pastes the visualization of the Hough space over an image, at the bottom-right corner.
-        It also shows 1D histograms of angles and distances.
+        Pega la visualización del espacio de Hough sobre una imagen, en la esquina inferior derecha.
+        También muestra histogramas 1D de ángulos y distancias.
 
         Arguments:
-        - image: the image to paste the visualization on.
-        - borderColor: color for the border.
-        - scale: scale factor for the histograms.
-        - showMax: whether to highlight the peak in the visualization.
+        - image: la imagen para pegar la visualización.
+        - borderColor: color para el borde.
+        - scale: factor de escala para los histogramas.
+        - showMax: si se debe resaltar el pico en la visualización.
 
         Returns:
-        - the image with the visualization
+        - image: la imagen con la visualización.
         """
 
         houghSpaceColor = self.getVisualization(scale, showMax)
