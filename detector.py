@@ -14,6 +14,8 @@ Contiene 3 clases:
 
 from __future__ import annotations  # sólo para hint Segments en init
 import numpy as np
+#from numpy.typing import NDArray
+#from typing import Any
 import cv2 as cv
 import math
 
@@ -36,6 +38,14 @@ class Segments:
     angles: ángulos de los segmentos
     normalUnityVectors: vectores unitarios normales a los segmentos
     """
+    n: int
+    referencePoint: np.ndarray
+    coords: np.ndarray
+    deltas: np.ndarray
+    lengths: np.ndarray
+    distances: np.ndarray
+    angles: np.ndarray
+    normalUnityVectors: np.ndarray
 
     def __init__(self, segs: Segments|np.ndarray|None, referencePoint:tuple|None=None):
         """
@@ -275,7 +285,7 @@ class SegmentsAnnotator:
         scalar = int(intensity*256)
         return (scalar, scalar, scalar)
 
-    def __init__(self, color:tuple=(0,0,255), thickness:float=1, withPoints:bool = False, offset:tuple=(0,0), scale:float=1.0, colorMap:function=colorMapBGR):
+    def __init__(self, color:tuple=(0,0,255), thickness:int=1, withPoints:bool = False, offset:tuple=(0,0), scale:float=1.0, colorMap:function=colorMapBGR):
         """
         Constructor
         Establece valores predeterminados para dibujar segmentos sobre una imagen.
@@ -296,7 +306,7 @@ class SegmentsAnnotator:
         self.scale = scale
         self.colorMap = colorMap
 
-    def drawSegments(self, image:np.ndarray, segments:Segments, intensities:np.ndarray|None=None, message:str|None=None, color:tuple|None=None, thickness:int|None=None, colorMap:function|None=None, withPoints:bool|None=None, offset:tuple|None=None, scale:float|None=None)->np.ndarray:
+    def drawSegments(self, image:np.ndarray, segments:Segments|np.ndarray, intensities:np.ndarray|None=None, message:str|None=None, color:tuple|None=None, thickness:int|None=None, colorMap:function|None=None, withPoints:bool|None=None, offset:tuple|np.ndarray|None=None, scale:float|None=None)->np.ndarray:
         """
         Dibuja los segmentos sobre una imagen.
         Si se proporcionan intensidades, el color se ignora y se utiliza colorMap.
@@ -438,6 +448,8 @@ class HoughSpace:
 
     def computeAngleHistogram(self)->np.ndarray:
         """
+        Para cada ángulo, suma los bins de todos los lanes (las distancias).
+        El resultado devuelto también se registra en self.angleHistogram.
         Requiere que self.houghSpace esté calculado.
 
         Returns:
@@ -458,15 +470,17 @@ class HoughSpace:
 
         Returns:
         - el histograma 1D de carriles.
+
+        El histograma resultante se le da la forma de vector columna, con [np.newaxis,:].
         """
 
         if(referenceAngleBin is not None):
             self.referenceAngleBin = referenceAngleBin
 
         self.laneHistogram = np.sum(self.houghSpace[self.referenceAngleBin-1:self.referenceAngleBin+1], axis=0)[np.newaxis,:]
-        return self.angleHistogram
+        return self.laneHistogram
 
-    def getVisualization(self, scale:float=None, showMax:bool=False)->np.ndarray:
+    def getVisualization(self, scale:float=0.0, showMax:bool=False)->np.ndarray:
         """
         Produce y devuelve una imagen de color mapeado del histograma producido en computeVotes(),
         opcionalmente resaltando el pico si showMax es True.
@@ -482,12 +496,12 @@ class HoughSpace:
         houghSpaceColor = cv.applyColorMap(houghSpaceGray.astype(np.uint8), cv.COLORMAP_DEEPGREEN)
         if(showMax):
             houghSpaceColor[self.maxLoc[0], self.maxLoc[1]] = (0,0,255)
-        if(scale is not None):
+        if(scale != 0.0):
             houghSpaceColor = cv.resize(houghSpaceColor, None, fx=scale, fy=scale, interpolation=cv.INTER_NEAREST)
 
         return houghSpaceColor
 
-    def pasteVisualization(self, image:np.ndarray, borderColor:tuple=(0,128,255), scale:float|None=None, showMax:bool=False)->np.ndarray:
+    def pasteVisualization(self, image:np.ndarray, borderColor:tuple=(0,128,255), scale:float=0.0, showMax:bool=False)->np.ndarray:
         """
         Pega la visualización del espacio de Hough sobre una imagen, en la esquina inferior derecha.
         También muestra histogramas 1D de ángulos y distancias.
@@ -512,7 +526,7 @@ class HoughSpace:
             cv.line(image, (iw-hw//2-1, ih-hh-2), (iw-hw//2-1, ih-1), borderColor)
             cv.line(image, (iw-hw-2, ih-hh//2-1), (iw- 1, ih-hh//2-1), borderColor)
 
-        if(scale is not None):
+        if(scale != 0.0):
             angleHistogram = cv.resize(self.angleHistogram, None, fx=scale, fy=scale, interpolation=cv.INTER_NEAREST)
             laneZone = cv.resize(self.laneHistogram, None, fx=scale, fy=scale, interpolation=cv.INTER_NEAREST)
         else:
