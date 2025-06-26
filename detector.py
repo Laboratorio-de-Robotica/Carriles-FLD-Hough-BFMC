@@ -306,7 +306,7 @@ class SegmentsAnnotator:
         self.scale = scale
         self.colorMap = colorMap
 
-    def drawSegments(self, image:np.ndarray, segments:Segments|np.ndarray, intensities:np.ndarray|None=None, message:str|None=None, color:tuple|None=None, thickness:int|None=None, colorMap:function|None=None, withPoints:bool|None=None, offset:tuple|np.ndarray|None=None, scale:float|None=None)->np.ndarray:
+    def drawSegments(self, image:np.ndarray, segments:Segments|np.ndarray, intensities:np.ndarray|None=None, message:str|None=None, color:tuple|np.ndarray|None=None, thickness:int|None=None, colorMap:function|None=None, withPoints:bool|None=None, offset:tuple|np.ndarray|None=None, scale:float|None=None)->np.ndarray:
         """
         Dibuja los segmentos sobre una imagen.
         Si se proporcionan intensidades, el color se ignora y se utiliza colorMap.
@@ -326,6 +326,8 @@ class SegmentsAnnotator:
             scale (float): Factor de escala para aplicar a los segmentos.
 
         """
+
+        colorIsArray = isinstance(color, np.ndarray) and color.ndim == 2
 
         # default values from object
         if offset is None:
@@ -349,14 +351,19 @@ class SegmentsAnnotator:
         
         for index, segments in enumerate(coords):
             if(intensities is not None):
-                color = self.colorMap(intensities[index])
+                segmentColor = self.colorMap(intensities[index])
+            elif colorIsArray:
+                segmentColor = color[index].tolist()
+                #print(f'index: {index}\ncolor:{segmentColor}, type: {type(segmentColor)}, element type: {type(segmentColor[0])}')
+            else:
+                segmentColor = color
 
             pointA = (offset + scale * segments[0]).astype(int)
             pointB = (offset + scale * segments[1]).astype(int)
-            cv.line(image, pointA, pointB, color=color, thickness=thickness)
+            cv.line(image, pointA, pointB, color=segmentColor, thickness=thickness)
             if(withPoints):
-                cv.circle(image, pointA, 2, color)
-                cv.circle(image, pointB, 2, color)
+                cv.circle(image, pointA, 2, segmentColor)
+                cv.circle(image, pointB, 2, segmentColor)
 
         if(message is not None):
             textLines = message.split('\n')

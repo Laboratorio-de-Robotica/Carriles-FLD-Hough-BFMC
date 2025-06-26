@@ -164,6 +164,15 @@ while(True):
 
     # Aquí se pueden adosar ángulos vecinos
 
+    colors = np.empty((zenithals.n, 3), dtype=np.uint8)
+    colors[hs.angleIndices == mainAngleBin] = np.array([0,255,0], np.uint8) # main direction
+    colors[hs.angleIndices == perpendicularAngleBin] = np.array([255,0,0], np.uint8) # perpendicular direction
+    colors[(hs.angleIndices != mainAngleBin) & (hs.angleIndices != perpendicularAngleBin)] = np.array([0,0,255], np.uint8) # other directions
+
+    #print(f'ndims: {colors.ndim}\ncolorIsArray: {isinstance(colors, np.ndarray) and colors.ndim == 2}')
+
+
+
     #
 
 
@@ -174,13 +183,18 @@ while(True):
     startAnnotationt = timer()
 
     imAnnotated = cv.cvtColor(imGray//2, cv.COLOR_GRAY2BGR)
+    
+    # segments, and message
+    cenitalAnnotations.drawSegments(imAnnotated, segments, color=colors)
+
+    '''
     annotations.drawSegments(imAnnotated, segments.coords)
     winnerValue = hs.maxVal
     winnerBin = hs.maxLoc
     mainSegmentsIndices = hs.getIndicesFromBin(*winnerBin)
     annotations.drawSegments(imAnnotated, segments.coords[mainSegmentsIndices], color=(0,255,0))
     cv.putText(imAnnotated, f'Winner bin: {winnerBin} value: {winnerValue}', (10, 20), cv.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255))
-
+    '''
     # Draw main axes
     origin = (imAnnotated.shape[1]//2, (imAnnotated.shape[0]+hui.limit)//2)
     zenithalOrigin = det.projectSegments(origin, hui.H2, segmentsShape=False, printFlag=printFlag).reshape(-1)
@@ -192,8 +206,8 @@ while(True):
     # Cyan: projected main axes
     annotations.drawSegments(imAnnotated, mainAxisSegments, color=(255,255,0))
 
-
     cv.imshow('Main segments', imAnnotated)
+
 
     # zenithal fustrum view
     zenithalIm = cv.warpPerspective(im, hui.H2, hui.zenithalSize)
@@ -204,27 +218,14 @@ while(True):
     # Green: main axes origin
     cv.drawMarker(zenithalIm, zenithalOrigin.astype(np.int32), (0,255,0), cv.MARKER_CROSS, 20, 3)
 
-    # Red: segments, and message
-    cenitalAnnotations.drawSegments(zenithalIm, zenithals, #intensities=zenithals.angles/3.17, 
+    # segments, and message
+    cenitalAnnotations.drawSegments(zenithalIm, zenithals, #intensities=zenithals.angles/3.17,
+                                    color=colors,
                                     message= f'FLD: {(endFLDt-startFLDt)*1000:.0f} ms'
                                     f'\nProcess: {(endProcesst-startProcesst)*1000:.0f} ms'
                                     f'\nSegments {str(len(zenithals.coords))}'
                                     f"\nHough votes: {'zenithals' if userVisualizationOption else 'segments'}"
-                                    f'\nMax votes: {winnerValue:.0f}'
                                    )
-    
-    # Green: main direction segments
-    cenitalAnnotations.drawSegments(zenithalIm, zenithals.coords[hs.angleIndices == mainAngleBin], color=(0,255,0))
-
-    # Blue: perpendicular direction segments
-    cenitalAnnotations.drawSegments(zenithalIm, zenithals.coords[hs.angleIndices == perpendicularAngleBin], color=(255,0,0))
-
-
-    # Light Green: main segments, all the segments in the main bin
-    #cenitalAnnotations.drawSegments(zenithalIm, zenithals.coords[mainSegmentsIndices], color=(0,255,128))
-
-    # Yelow: main segment, the one with the most votes    
-    #cenitalAnnotations.drawSegments(zenithalIm, zenithals.coords[mainSegmentIndex], color=(0,255,255))
 
     # Cyan: main axes
     cenitalAnnotations.drawSegments(zenithalIm, mainAxisZenithalSegments, color=(255,255,0))
