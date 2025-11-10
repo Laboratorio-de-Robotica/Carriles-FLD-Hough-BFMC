@@ -109,7 +109,7 @@ while(True):
     segments = det.Segments(lines)
     segments.computeLengths()   # used for votes
 
-    zenithals = det.zenithalSegmentsFactory(segments, hui.H2)
+    zenithals = det.zenithalSegmentsFactory(segments, hui.Hview)
     zenithals.setReferencePoint((hui.zenithalSize[0]//2, hui.zenithalSize[1]))
     zenithals.computeAnglesAndDistances()   # Hough variables    
     hs.assign2Bins(zenithals)
@@ -131,7 +131,7 @@ while(True):
     cv.imshow('Main segments', imAnnotated)
 
     # zenithal fustrum view
-    zenithalIm = cv.warpPerspective(im, hui.H2, hui.zenithalSize)
+    zenithalIm = cv.warpPerspective(im, hui.Hview, hui.zenithalSize)
     cv.drawMarker(zenithalIm, zenithals.referencePoint.astype(np.int32), (0,0,255), cv.MARKER_CROSS, 20, 2)
     cenitalAnnotations.drawSegments(zenithalIm, zenithals, intensities=zenithals.angles/3.17, 
                                     message= f'FLD: {endFLDt-startFLDt:.3f} s\nProcess: {endProcesst-startProcesst:.3f} s\nSegments {str(len(zenithals.coords))}'),

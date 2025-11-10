@@ -31,16 +31,28 @@ def mouseListener(event,x,y,flags,self):
             self.calculateRoi()
 
 class Hui:
-    def __init__(self, windowName, imShowSize, afterRoi=None) -> None:
-        self.command = ''
+    command = ''
+    H: np.ndarray = np.eye(3, dtype=np.float32)
+    Hview: np.ndarray = H
+    zenithalSquareSide: int = 500
+    zenithalSize: tuple
+    windowName: str
+    imShowSize: tuple
+    horizon:int
+    top:int
+    limit:int
+    #afterRoi: callable | None
+
+    def __init__(self, windowName:str, imShowSize:tuple, afterRoi=None) -> None:
+        #self.command = ''
         self.windowName = windowName
         self.imShowSize = imShowSize
         frameHeight = imShowSize[1]
         self.horizon = int(frameHeight * 0.32)
         self.top     = int(frameHeight * 0.75)
         self.limit   = int(frameHeight * 0.45)
-        self.zenithalSquareSide = 500
-        self.H = None
+        #self.zenithalSquareSide = 500
+        #self.H = None
         self.afterRoi = afterRoi
 
         cv.namedWindow(self.windowName)
@@ -71,17 +83,17 @@ class Hui:
     # ROI
     # Cuadrilátero, comenzando por vértice superior izquierdo, en sentido horario
     # Si se proporciona una homografía, la usa para obtener horizonte y tope
-    def calculateRoi(self, H = None):
+    def calculateRoi(self, H: np.ndarray | None = None):
         '''
         H is the homography transforming the trapezoid into a square.
-        H2 is the modify homography to get the zenithal view, a wider view than the prior.
+        Hview is the modify homography to get the zenithal view, a wider view than the prior.
         '''
         if(H is not None):
             # Homografía suministrada, se recalculan horizonte y tope
             self.H = H.astype(np.float32)
             puntosClave = np.array(((0,-1,0),(0,0,1)), np.float32)
             #print('puntosClave', puntosClave)
-            puntosEnPerspectiva = np.matmul(np.linalg.inv(self.H.astype(np.float32)), puntosClave.T).T
+            puntosEnPerspectiva = np.matmul(np.linalg.inv(H.astype(np.float32)), puntosClave.T).T
             #print('puntosEnPerspectiva', puntosEnPerspectiva)
             self.horizon = int(puntosEnPerspectiva[0,1]/puntosEnPerspectiva[0,2])
             self.top      = int(puntosEnPerspectiva[1,1]/puntosEnPerspectiva[1,2])
@@ -111,7 +123,8 @@ class Hui:
             self.H = cv.getPerspectiveTransform(roiTrapezoidVertices.astype(np.float32), zenithalSquareVertices)
             #print('Homografía:\n', self.H, '\n')
         
-        # H2 for cenital view
+        # Hview for cenital view
+        assert self.H is not None
         Pleft = self.H @ np.array([0.0, self.limit, 1.0], np.float32).reshape(-1, 1)
         Pleft = (Pleft/Pleft[2]).reshape(-1)
         #print('Pleft', Pleft.shape, Pleft)
@@ -120,12 +133,12 @@ class Hui:
             [0.0, 1.0, -Pleft[1]],
             [0.0, 0.0,       1.0]
         ], np.float32)
-        self.H2 = translation @ self.H
+        self.Hview = translation @ self.H
 
-        Pright = self.H2 @ np.array([self.imShowSize[0], self.limit, 1.0], np.float32).reshape(-1, 1)
+        Pright = self.Hview @ np.array([self.imShowSize[0], self.limit, 1.0], np.float32).reshape(-1, 1)
         Pright = (Pright/Pright[2]).reshape(-1)
-        self.zenithalSize = np.array((Pright[0], -Pleft[1]+self.zenithalSquareSide),np.int32)
-        #print('self.zenithalSize', type(self.zenithalSize), self.zenithalSize)
+        self.zenithalSize = (int(Pright[0]), int(-Pleft[1])+self.zenithalSquareSide)
+        #np.array((Pright[0], -Pleft[1]+self.zenithalSquareSide),np.int32)
 
         if(self.afterRoi):
             self.afterRoi(self)

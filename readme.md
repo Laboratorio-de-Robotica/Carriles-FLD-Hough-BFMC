@@ -45,5 +45,5 @@ El documento [Carriles Hough](https://docs.google.com/document/d/1SYC7nZT3Y_Wc-r
 
 Los archivos numerados corresponden a versiones anteriores pero que funcionan, y están destinados a ser eliminados.  Por ejemplo, ya se eliminaron carril1.py a carril4.py.
 
-- carril5.py y carril6.py: dos implementaciones con cambios profundos, carril.py se basa en carril6.py
+- carril5.py y carril6.py: dos implementaciones con cambios profundos, carril.py se basa en carril6.py.  carril7.py está en desarrollo.
 - detector1.py: versión anterior de detector.py, usada por carril5.py

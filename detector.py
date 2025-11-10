@@ -18,6 +18,9 @@ import numpy as np
 #from typing import Any
 import cv2 as cv
 import math
+from typing import Callable
+
+Color = tuple[int, int, int]
 
 class Segments:
     """
@@ -28,7 +31,9 @@ class Segments:
     Propiedades de Segments:
 
     n: número de segmentos
-    referencePoint: punto 2D, origen para el cálculo de la distancia de Hough
+    referencePoint: punto 2D, origen para el cálculo de la distancia de Hough;
+        es un ndarray de 2 elementos float.
+
 
     ndarray de n filas:
     coords: ndarray de segmentos detectados [n,2,2], indefinido en un objeto vacío, se define una vez y no debería cambiar
@@ -39,7 +44,7 @@ class Segments:
     normalUnityVectors: vectores unitarios normales a los segmentos
     """
     n: int
-    referencePoint: np.ndarray
+    referencePoint: np.ndarray = np.full((2,), np.nan)   # ndarray que fallará si no se lo inicializa
     coords: np.ndarray
     deltas: np.ndarray
     lengths: np.ndarray
@@ -47,7 +52,7 @@ class Segments:
     angles: np.ndarray
     normalUnityVectors: np.ndarray
 
-    def __init__(self, segs: Segments|np.ndarray|None, referencePoint:tuple|None=None):
+    def __init__(self, segs: Segments|np.ndarray|None, referencePoint:tuple|np.ndarray|None=None):
         """
         Constructor
 
@@ -75,23 +80,20 @@ class Segments:
             self.coords = segs.coords
 
         if(referencePoint is not None):
-            self.setReferencePoint(referencePoint)
+            self.referencePoint[:] = referencePoint
 
-    
-    def setReferencePoint(self, point:tuple):
+
+    def getPointAsIntTuple(self, point:np.ndarray)->tuple:
         """
-        Establece el punto de referencia para el cálculo de la distancia de Hough.
-        No tiene otro propósito.
-        Debes llamar explícitamente a este método para establecer el punto de referencia.
-        Calcular distancias sin un punto de referencia generará una excepción,
-        porque tener un referencePoint aleatorio es peor.
+        Devuelve un punto como una tupla de enteros.
+        Así lo requiere drawMarker de OpenCV.
 
-        Arguments:
-            point (tuple): El punto de referencia como tupla 2D.
-
+        Returns:
+            np.ndarray: El punto de referencia como un array 2D.
         """
 
-        self.referencePoint = np.array(point, dtype=np.float32)
+        return tuple(point.astype(np.int32))
+
 
     def computeDeltas(self):
         """
@@ -227,7 +229,7 @@ class SegmentsAnnotator:
     """
 
     @staticmethod
-    def colorMapBGR(intensity:float)->tuple:
+    def colorMapBGR(intensity:float)->Color:
         """
         Devuelve un color BGR a partir de una intensidad en el rango [0.0,1.0),
         con colores primarios y secundarios brillantes 255.
@@ -254,7 +256,7 @@ class SegmentsAnnotator:
         return (383-abs(scalar-383), abs(scalar-255), abs(scalar-510))
 
     @staticmethod
-    def colorMapYMC(intensity:float)->tuple:
+    def colorMapYMC(intensity:float)->Color:
         """
         Devuelve un color BGR a partir de una intensidad en el rango [0.0,1.0),
         con colores brillantes 255.
@@ -285,7 +287,7 @@ class SegmentsAnnotator:
         scalar = int(intensity*256)
         return (scalar, scalar, scalar)
 
-    def __init__(self, color:tuple=(0,0,255), thickness:int=1, withPoints:bool = False, offset:tuple=(0,0), scale:float=1.0, colorMap:function=colorMapBGR):
+    def __init__(self, color:Color=(0,0,255), thickness:int=1, withPoints:bool = False, offset:tuple=(0,0), scale:float=1.0, colorMap:Callable[[float], Color]=colorMapBGR):
         """
         Constructor
         Establece valores predeterminados para dibujar segmentos sobre una imagen.
@@ -311,20 +313,27 @@ class SegmentsAnnotator:
         Dibuja los segmentos sobre una imagen.
         Si se proporcionan intensidades, el color se ignora y se utiliza colorMap.
         Si se proporciona un mensaje, se escribe en la esquina inferior izquierda.
-        Otros argumentos permiten al usuario anular los valores predeterminados.
+        Si se omiten, estos argumentos tienen valores por defecto en el objeto:
+
+        - color
+        - thickness
+        - withPoints
+        - offset
+        - scale
 
         Args:
             image: Imagen para anotar.
             segments: Segmentos a dibujar.
             intensities: Intensidades para mapear a colores, en el rango [0..1). Mismo tamaño que segments.
             message (str): Mensaje para escribir en la imagen.
-            color (tuple): Color para la anotación, utilizado si no se proporcionan intensidades.
+            color: Color para la anotación, utilizado si no se proporcionan intensidades.
+                Un ndarray de forma (n,3) proporciona un color para cada segmento.
+                Por defecto usa self.color.
             thickness (int): Grosor de las líneas.
             colorMap (function): Función para mapear intensidades a colores.
             withPoints (bool): Si se deben dibujar los puntos finales de los segmentos.
             offset (tuple): Desplazamiento para aplicar a los segmentos.
             scale (float): Factor de escala para aplicar a los segmentos.
-
         """
 
         colorIsArray = isinstance(color, np.ndarray) and color.ndim == 2
@@ -349,17 +358,17 @@ class SegmentsAnnotator:
         else:
             coords = np.array(segments).reshape((-1,2,2))
         
-        for index, segments in enumerate(coords):
+        for index, segment in enumerate(coords):
             if(intensities is not None):
                 segmentColor = self.colorMap(intensities[index])
             elif colorIsArray:
-                segmentColor = color[index].tolist()
-                #print(f'index: {index}\ncolor:{segmentColor}, type: {type(segmentColor)}, element type: {type(segmentColor[0])}')
+                segmentColor = tuple(color[index].tolist())
             else:
                 segmentColor = color
 
-            pointA = (offset + scale * segments[0]).astype(int)
-            pointB = (offset + scale * segments[1]).astype(int)
+            assert isinstance(segmentColor, tuple)
+            pointA = tuple((offset + scale * segment[0]).astype(int))
+            pointB = tuple((offset + scale * segment[1]).astype(int))
             cv.line(image, pointA, pointB, color=segmentColor, thickness=thickness)
             if(withPoints):
                 cv.circle(image, pointA, 2, segmentColor)
@@ -374,6 +383,34 @@ class SegmentsAnnotator:
         return image
 
 class HoughSpace:
+    # Parámetros de construcción
+    angleBins:int=10        # número de bins para ángulos
+    maxDistanceAsLanes:int=4# máxima distancia a considerar, en anchos de carril
+    laneBins:int=4          # número de bins en un carril
+    laneWidth:int=210       # ancho de un carril en coordenadas cenitales
+
+    # Calculados en __init__()
+    centralAngleBin:int     # angleBins // 2
+    angle2index:float       # angleBins / math.pi
+    distance2index: float   # laneBins / laneWidth
+    maxDistanceInPixels:int # laneWidth * maxDistanceAsLanes
+    centralDistanceBin:int  # math.ceil(laneBins * maxDistanceAsLanes)
+    referenceAngleBin:int   # centralAngleBin
+    distanceBins:int        # 2 * centralDistanceBin + 1
+
+    # Computados en assign2Bins()
+    angleIndices:np.ndarray     # array paralelo a los segmentos, con índices de bins para ángulos
+    distanceIndices:np.ndarray   # array paralelo a los segmentos, con índices de bins para distancias
+
+    # Computados en computeVotes()
+    houghSpace:np.ndarray       # espacio de Hough, histograma 2D de angleBins x distanceBins
+    maxLoc:tuple                # coordenada 2D del valor máximo en houghSpace
+    maxVal:float                # valor máximo de houghSpace
+
+    # Computados en computeAngleHistogram() y computeLaneHistogram()
+    angleHistogram:np.ndarray    # histograma de ángulos
+    laneHistogram:np.ndarray     # histograma de carriles
+
     def __init__(self, angleBins:int=10, maxDistanceAsLanes:int=4, laneBins:int=4, laneWidth:int=210):
         """
         Constructor

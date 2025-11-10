@@ -97,7 +97,7 @@ hui.calculateRoi()
 hs = det.HoughSpace()
 lastAngleBin = hs.angleBins // 2
 annotations = det.SegmentsAnnotator()
-cenitalAnnotations = det.SegmentsAnnotator(thickness=2, colorMap=det.SegmentsAnnotator.colorMapBGR)
+zenitalAnnotations = det.SegmentsAnnotator(thickness=2, colorMap=det.SegmentsAnnotator.colorMapBGR)
 umbralCanny = 160
 printFlag = False
 fld = cv.ximgproc.createFastLineDetector(canny_th1 = umbralCanny, canny_th2 = umbralCanny*3, do_merge=True)
@@ -127,17 +127,11 @@ while(True):
     segments = det.Segments(lines)
     segments.computeLengths()   # used for votes
 
-    zenithals = det.Segments(det.projectSegments(segments, hui.H2),
+    zenithals = det.Segments(det.projectSegments(segments, hui.Hview),
                              referencePoint=(hui.zenithalSize[0]//2, hui.zenithalSize[1]))
-    #zenithals.setReferencePoint((hui.zenithalSize[0]//2, hui.zenithalSize[1]))
     zenithals.computeAnglesAndDistances()   # Hough variables    
     hs.assign2Bins(zenithals)
     hs.computeVotes(zenithals.lengths if userVisualizationOption else segments.lengths)   # alternative: zenithals.lengths
-
-    # Main axes from max vote
-    mainSegmentsIndices = hs.getIndicesFromBin(*hs.maxLoc)
-    mainSegmentIndex = mainSegmentsIndices[np.argmax(segments.lengths[mainSegmentsIndices])]
-    mainZenithalDelta = zenithals.deltas[mainSegmentIndex]/zenithals.lengths[mainSegmentIndex]
 
     # Canonical segments
     maxAngleBin = np.argmax(hs.angleHistogram)
@@ -164,16 +158,13 @@ while(True):
 
     # Aquí se pueden adosar ángulos vecinos
 
-    colors = np.empty((zenithals.n, 3), dtype=np.uint8)
-    colors[hs.angleIndices == mainAngleBin] = np.array([0,255,0], np.uint8) # main direction
-    colors[hs.angleIndices == perpendicularAngleBin] = np.array([255,0,0], np.uint8) # perpendicular direction
-    colors[(hs.angleIndices != mainAngleBin) & (hs.angleIndices != perpendicularAngleBin)] = np.array([0,0,255], np.uint8) # other directions
+    # Análisis de las distancias
+    
 
-    #print(f'ndims: {colors.ndim}\ncolorIsArray: {isinstance(colors, np.ndarray) and colors.ndim == 2}')
-
-
-
-    #
+    # Main axes from max vote
+    mainSegmentsIndices = hs.getIndicesFromBin(*hs.maxLoc)
+    mainSegmentIndex = mainSegmentsIndices[np.argmax(segments.lengths[mainSegmentsIndices])]
+    mainZenithalDelta = zenithals.deltas[mainSegmentIndex]/zenithals.lengths[mainSegmentIndex]
 
 
 
@@ -184,24 +175,22 @@ while(True):
 
     imAnnotated = cv.cvtColor(imGray//2, cv.COLOR_GRAY2BGR)
     
-    # segments, and message
-    cenitalAnnotations.drawSegments(imAnnotated, segments, color=colors)
+    # draw segments
+    colors = np.empty((segments.n, 3), dtype=np.uint8)
+    colors[hs.angleIndices == mainAngleBin] = np.array([0,255,0] if status == 0 else [0,128,0], np.uint8) # main direction
+    colors[hs.angleIndices == perpendicularAngleBin] = np.array([255,0,0] if status == 1 else [128,0,0], np.uint8) # perpendicular direction
+    colors[(hs.angleIndices != mainAngleBin) & (hs.angleIndices != perpendicularAngleBin)] = np.array([0,0,128], np.uint8) # other directions
 
-    '''
-    annotations.drawSegments(imAnnotated, segments.coords)
-    winnerValue = hs.maxVal
-    winnerBin = hs.maxLoc
-    mainSegmentsIndices = hs.getIndicesFromBin(*winnerBin)
-    annotations.drawSegments(imAnnotated, segments.coords[mainSegmentsIndices], color=(0,255,0))
-    cv.putText(imAnnotated, f'Winner bin: {winnerBin} value: {winnerValue}', (10, 20), cv.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255))
-    '''
-    # Draw main axes
+    annotations.drawSegments(imAnnotated, segments, color=colors)
+
+    # draw main axes
     origin = (imAnnotated.shape[1]//2, (imAnnotated.shape[0]+hui.limit)//2)
-    zenithalOrigin = det.projectSegments(origin, hui.H2, segmentsShape=False, printFlag=printFlag).reshape(-1)
+    assert hui.Hview is not None
+    zenithalOrigin = det.projectSegments(origin, hui.Hview, segmentsShape=False, printFlag=printFlag).reshape(-1)
     zenithalForward = zenithalOrigin - mainZenithalDelta * hs.laneWidth/2
     zenithalSide = zenithalOrigin + np.array((mainZenithalDelta[1], -mainZenithalDelta[0])) * hs.laneWidth/2
     mainAxisZenithalSegments = np.array([zenithalOrigin, zenithalForward, zenithalOrigin, zenithalSide]).reshape(-1, 2, 2)
-    mainAxisSegments = det.projectSegments(mainAxisZenithalSegments, hui.H2, inverse=True, printFlag=printFlag)
+    mainAxisSegments = det.projectSegments(mainAxisZenithalSegments, hui.Hview, inverse=True, printFlag=printFlag)
 
     # Cyan: projected main axes
     annotations.drawSegments(imAnnotated, mainAxisSegments, color=(255,255,0))
@@ -210,16 +199,16 @@ while(True):
 
 
     # zenithal fustrum view
-    zenithalIm = cv.warpPerspective(im, hui.H2, hui.zenithalSize)
+    zenithalIm = cv.warpPerspective(im, hui.Hview, tuple(hui.zenithalSize))
 
     # Red: base origin
-    cv.drawMarker(zenithalIm, zenithals.referencePoint.astype(np.int32), (0,0,255), cv.MARKER_CROSS, 20, 3)
+    cv.drawMarker(zenithalIm, tuple(zenithals.getPointAsIntTuple(zenithals.referencePoint)), (0,0,255), cv.MARKER_CROSS, 20, 3)
 
     # Green: main axes origin
-    cv.drawMarker(zenithalIm, zenithalOrigin.astype(np.int32), (0,255,0), cv.MARKER_CROSS, 20, 3)
+    cv.drawMarker(zenithalIm, zenithals.getPointAsIntTuple(zenithalOrigin), (0,255,0), cv.MARKER_CROSS, 20, 3)
 
     # segments, and message
-    cenitalAnnotations.drawSegments(zenithalIm, zenithals, #intensities=zenithals.angles/3.17,
+    zenitalAnnotations.drawSegments(zenithalIm, zenithals, #intensities=zenithals.angles/3.17,
                                     color=colors,
                                     message= f'FLD: {(endFLDt-startFLDt)*1000:.0f} ms'
                                     f'\nProcess: {(endProcesst-startProcesst)*1000:.0f} ms'
@@ -228,7 +217,7 @@ while(True):
                                    )
 
     # Cyan: main axes
-    cenitalAnnotations.drawSegments(zenithalIm, mainAxisZenithalSegments, color=(255,255,0))
+    zenitalAnnotations.drawSegments(zenithalIm, mainAxisZenithalSegments, color=(255,255,0))
 
     # autoshrink
     while(zenithalIm.shape[0] > 700):
@@ -262,8 +251,8 @@ while(True):
                 print('roiPoly', hui.roiPoly, type(hui.roiPoly), type(hui.roiPoly[0]), type(hui.roiPoly[0][0]))
                 print(f"winnerBin: {winnerBin}")
                 #print(f"mainSegmentsIndices: {len(mainSegmentsIndices)}")
-                print(f'H2 det: {np.linalg.det(hui.H2)}, \nH2: {hui.H2}')
-                print(f'H2 inv: {np.linalg.inv(hui.H2)}')
+                print(f'H2 det: {np.linalg.det(hui.Hview)}, \nH2: {hui.Hview}')
+                print(f'H2 inv: {np.linalg.inv(hui.Hview)}')
                 print(f'origin: {origin}')
                 print(f'zenithalOrigin: {zenithalOrigin}')
                 print(f'zenithalForward: {zenithalForward}')

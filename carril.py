@@ -123,7 +123,7 @@ while(True):
     segments = det.Segments(lines)
     segments.computeLengths()   # used for votes
 
-    zenithals = det.Segments(det.projectSegments(segments, hui.H2),
+    zenithals = det.Segments(det.projectSegments(segments, hui.Hview),
                              referencePoint=(hui.zenithalSize[0]//2, hui.zenithalSize[1]))
     #zenithals.setReferencePoint((hui.zenithalSize[0]//2, hui.zenithalSize[1]))
     zenithals.computeAnglesAndDistances()   # Hough variables    
@@ -151,18 +151,18 @@ while(True):
 
     # Draw main axis
     origin = (imAnnotated.shape[1]//2, (imAnnotated.shape[0]+hui.limit)//2)
-    zenithalOrigin = det.projectSegments(origin, hui.H2, segmentsShape=False, printFlag=printFlag).reshape(-1)
+    zenithalOrigin = det.projectSegments(origin, hui.Hview, segmentsShape=False, printFlag=printFlag).reshape(-1)
     zenithalForward = zenithalOrigin - mainZenithalDelta * hs.laneWidth/2
     zenithalSide = zenithalOrigin + np.array((mainZenithalDelta[1], -mainZenithalDelta[0])) * hs.laneWidth/2
     mainAxisZenithalSegments = np.array([zenithalOrigin, zenithalForward, zenithalOrigin, zenithalSide]).reshape(-1, 2, 2)
-    mainAxisSegments = det.projectSegments(mainAxisZenithalSegments, hui.H2, inverse=True, printFlag=printFlag)
+    mainAxisSegments = det.projectSegments(mainAxisZenithalSegments, hui.Hview, inverse=True, printFlag=printFlag)
     annotations.drawSegments(imAnnotated, mainAxisSegments, color=(255,255,0))
 
 
     cv.imshow('Main segments', imAnnotated)
 
     # zenithal fustrum view
-    zenithalIm = cv.warpPerspective(im, hui.H2, hui.zenithalSize)
+    zenithalIm = cv.warpPerspective(im, hui.Hview, hui.zenithalSize)
     cv.drawMarker(zenithalIm, zenithals.referencePoint.astype(np.int32), (0,0,255), cv.MARKER_CROSS, 20, 3)
     cv.drawMarker(zenithalIm, zenithalOrigin.astype(np.int32), (0,255,0), cv.MARKER_CROSS, 20, 3)
     cenitalAnnotations.drawSegments(zenithalIm, zenithals, #intensities=zenithals.angles/3.17, 
@@ -208,8 +208,8 @@ while(True):
                 print('roiPoly', hui.roiPoly, type(hui.roiPoly), type(hui.roiPoly[0]), type(hui.roiPoly[0][0]))
                 print(f"winnerBin: {winnerBin}")
                 #print(f"mainSegmentsIndices: {len(mainSegmentsIndices)}")
-                print(f'H2 det: {np.linalg.det(hui.H2)}, \nH2: {hui.H2}')
-                print(f'H2 inv: {np.linalg.inv(hui.H2)}')
+                print(f'H2 det: {np.linalg.det(hui.Hview)}, \nH2: {hui.Hview}')
+                print(f'H2 inv: {np.linalg.inv(hui.Hview)}')
                 print(f'origin: {origin}')
                 print(f'zenithalOrigin: {zenithalOrigin}')
                 print(f'zenithalForward: {zenithalForward}')
