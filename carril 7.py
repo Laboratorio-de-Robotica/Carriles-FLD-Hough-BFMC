@@ -66,17 +66,27 @@ if(frameHeight > targetFrameHeight):
 frameSize = (int(frameWidth), int(frameHeight))
 print('Resized image size :', frameSize, type(frameWidth))
 
-# Carga la matriz desde yaml, y actualiza la anotación.  El nombre del archivo está en args.load. Si el archivo no existe no hace nada.
 def load():
+    '''
+    Carga la matriz desde yaml, y actualiza la anotación.  
+    El nombre del archivo está en args.load. Si el archivo no existe no hace nada.
+
+    Esta función se invoca al inicio y luego desde la UI con la tecla 'l'.
+    '''
     fs = cv.FileStorage(args.load, cv.FILE_STORAGE_READ)
     if(fs.isOpened()):
-        #global H, hui
         hui.H = fs.getNode('H').mat()
         hui.calculateRoi(hui.H)
         fs.release()
 
-# Guarda la matriz en yaml.  El nombre del archivo está en args.save.  Si el archivo no existe lo crea.
 def save():
+    '''
+    Guarda la matriz en yaml.  
+    El nombre del archivo está en args.save.  
+    Si el archivo no existe lo crea.
+
+    Esta función se invoca exclusivamente desde la UI con la tecla 's'.
+    '''
     fs = cv.FileStorage(args.save, cv.FILE_STORAGE_WRITE)
     fs.write('H', hui.H)
     fs.release()
@@ -95,12 +105,13 @@ hui.calculateRoi()
 - angles 0..pi
 '''
 hs = det.HoughSpace()
-lastAngleBin = hs.angleBins // 2
+lastAngleBin = hs.howManyAngleBins // 2
 annotations = det.SegmentsAnnotator()
-zenitalAnnotations = det.SegmentsAnnotator(thickness=2, colorMap=det.SegmentsAnnotator.colorMapBGR)
+zenithalAnnotations = det.SegmentsAnnotator(thickness=2, colorMap=det.SegmentsAnnotator.colorMapBGR)
 umbralCanny = 160
 printFlag = False
 fld = cv.ximgproc.createFastLineDetector(canny_th1 = umbralCanny, canny_th2 = umbralCanny*3, do_merge=True)
+
 while(True):
     # video feed
     if(play):
@@ -135,23 +146,23 @@ while(True):
 
     # Canonical segments
     maxAngleBin = np.argmax(hs.angleHistogram)
-    angleBinVariation = (maxAngleBin-lastAngleBin+1) % hs.angleBins # 0..2
+    angleBinVariation = (maxAngleBin-lastAngleBin+1) % hs.howManyAngleBins # 0..2
     if angleBinVariation < 3:
         # Normal, máximo cambio +-1
         mainAngleBin = maxAngleBin
-        perpendicularAngleBin = (maxAngleBin + hs.angleBins//2) % hs.angleBins
+        perpendicularAngleBin = (maxAngleBin + hs.howManyAngleBins//2) % hs.howManyAngleBins
         status = 0
 
-    elif angleBinVariation >= hs.angleBins//2 and angleBinVariation <= hs.angleBins//2 + 2:
+    elif angleBinVariation >= hs.howManyAngleBins//2 and angleBinVariation <= hs.howManyAngleBins//2 + 2:
         # Perpendicular
-        mainAngleBin = (maxAngleBin - hs.angleBins//2) % hs.angleBins
+        mainAngleBin = (maxAngleBin - hs.howManyAngleBins//2) % hs.howManyAngleBins
         perpendicularAngleBin = maxAngleBin
         status = 1
 
     else:
         # Perdido, tomar el máximo como principal
         mainAngleBin = maxAngleBin
-        perpendicularAngleBin = (maxAngleBin + hs.angleBins//2) % hs.angleBins
+        perpendicularAngleBin = (maxAngleBin + hs.howManyAngleBins//2) % hs.howManyAngleBins
         status = 2
 
     lastAngleBin = mainAngleBin
@@ -161,11 +172,33 @@ while(True):
     # Análisis de las distancias
     
 
-    # Main axes from max vote
-    mainSegmentsIndices = hs.getIndicesFromBin(*hs.maxLoc)
-    mainSegmentIndex = mainSegmentsIndices[np.argmax(segments.lengths[mainSegmentsIndices])]
-    mainZenithalDelta = zenithals.deltas[mainSegmentIndex]/zenithals.lengths[mainSegmentIndex]
+    '''
+    Dirección principal
+    Se toma el rango pico, el de más votos, y dentro de él, el segmento más largo.
+    peakZenithalVersor es un vector unitario que apunta en la dirección de ese segmento.
+    '''
+    peakSegmentsIndices = hs.getIndicesFromBin(*hs.maxLoc)
+    peakSegmentIndex = peakSegmentsIndices[np.argmax(segments.lengths[peakSegmentsIndices])]
+    peakZenithalVersor = zenithals.deltas[peakSegmentIndex]/zenithals.lengths[peakSegmentIndex]
 
+
+    '''
+    Dirección principal alternativa
+    Como las dos direcciones principales son perpendiculares,
+    se busca el rango angular máximo sumando ambos histogramas 1D.
+    '''
+    halfAngleBins: int = hs.centralAngleBin #hs.howManyAngleBins // 2
+    foldedAngleHistogram = hs.angleHistogram.reshape(2, halfAngleBins).sum(axis=0)
+    maxFoldedAngleHistogramIndex = int(np.argmax(foldedAngleHistogram))
+    isMaxInFirstQuadrant: bool = hs.angleHistogram[maxFoldedAngleHistogramIndex] > hs.angleHistogram[(maxFoldedAngleHistogramIndex + halfAngleBins)]
+    maxAngleHistogramIndex = maxFoldedAngleHistogramIndex if isMaxInFirstQuadrant else (maxFoldedAngleHistogramIndex + halfAngleBins)
+
+    '''
+    Identificado el índice angular principal (maxAngleHistogramIndex),
+    se analizará el histograma de distancias 1D para ese ángulo,
+    plegando en anchos de carril (howManyBinsInALane).
+    '''
+    foldedDistanceHistogram1D = hs.houghSpace[maxAngleHistogramIndex].reshape(-1, hs.howManyBinsInALane).sum(axis=1)
 
 
     endProcesst = timer()
@@ -187,8 +220,8 @@ while(True):
     origin = (imAnnotated.shape[1]//2, (imAnnotated.shape[0]+hui.limit)//2)
     assert hui.Hview is not None
     zenithalOrigin = det.projectSegments(origin, hui.Hview, segmentsShape=False, printFlag=printFlag).reshape(-1)
-    zenithalForward = zenithalOrigin - mainZenithalDelta * hs.laneWidth/2
-    zenithalSide = zenithalOrigin + np.array((mainZenithalDelta[1], -mainZenithalDelta[0])) * hs.laneWidth/2
+    zenithalForward = zenithalOrigin - peakZenithalVersor * hs.laneWidthInPixels/2
+    zenithalSide = zenithalOrigin + np.array((peakZenithalVersor[1], -peakZenithalVersor[0])) * hs.laneWidthInPixels/2
     mainAxisZenithalSegments = np.array([zenithalOrigin, zenithalForward, zenithalOrigin, zenithalSide]).reshape(-1, 2, 2)
     mainAxisSegments = det.projectSegments(mainAxisZenithalSegments, hui.Hview, inverse=True, printFlag=printFlag)
 
@@ -208,7 +241,7 @@ while(True):
     cv.drawMarker(zenithalIm, zenithals.getPointAsIntTuple(zenithalOrigin), (0,255,0), cv.MARKER_CROSS, 20, 3)
 
     # segments, and message
-    zenitalAnnotations.drawSegments(zenithalIm, zenithals, #intensities=zenithals.angles/3.17,
+    zenithalAnnotations.drawSegments(zenithalIm, zenithals, #intensities=zenithals.angles/3.17,
                                     color=colors,
                                     message= f'FLD: {(endFLDt-startFLDt)*1000:.0f} ms'
                                     f'\nProcess: {(endProcesst-startProcesst)*1000:.0f} ms'
@@ -217,13 +250,19 @@ while(True):
                                    )
 
     # Cyan: main axes
-    zenitalAnnotations.drawSegments(zenithalIm, mainAxisZenithalSegments, color=(255,255,0))
+    zenithalAnnotations.drawSegments(zenithalIm, mainAxisZenithalSegments, color=(255,255,0))
 
     # autoshrink
     while(zenithalIm.shape[0] > 700):
         zenithalIm = cv.resize(zenithalIm, None, fx=0.5, fy=0.5, interpolation=cv.INTER_LINEAR)
 
-    hs.pasteVisualization(zenithalIm, scale=4.0, showMax=True)
+    houghSpaceColor = hs.pasteVisualization(zenithalIm, scale=4.0, showMax=True)
+    vizVertex = np.array(zenithalIm.shape[1::-1])-houghSpaceColor.shape[1::-1]
+    angleBinCoords = vizVertex + (-9, 4*maxAngleHistogramIndex+1)
+    #angleBinCoords = (zenithalIm.shape[1]-houghSpaceColor.shape[1]-9, zenithalIm.shape[0]-houghSpaceColor.shape[0]+4*maxAngleHistogramIndex+1)
+    cv.drawMarker(zenithalIm, tuple(angleBinCoords), (0,0,255), cv.MARKER_SQUARE, 4)
+    #print('Angle bin:', maxAngleHistogramIndex)
+
     cv.imshow('zenithal wide', zenithalIm)
 
     endAnnotationt = timer()
@@ -245,11 +284,16 @@ while(True):
             case 'v':
                 userVisualizationOption += 1
                 userVisualizationOption %= 2
+            case 'h':
+                print('hs.houghSpace:', hs.houghSpace)
+                print('hs.angleHistogram:', hs.angleHistogram)
+                print('foldedAngleHistogram:', foldedAngleHistogram)
+                print(f'maxAngleHistogramIndex: {maxAngleHistogramIndex}')
             case 'p':
                 printFlag = True
                 print('image shape:', im.shape)
                 print('roiPoly', hui.roiPoly, type(hui.roiPoly), type(hui.roiPoly[0]), type(hui.roiPoly[0][0]))
-                print(f"winnerBin: {winnerBin}")
+                #print(f"winnerBin: {winnerBin}")
                 #print(f"mainSegmentsIndices: {len(mainSegmentsIndices)}")
                 print(f'H2 det: {np.linalg.det(hui.Hview)}, \nH2: {hui.Hview}')
                 print(f'H2 inv: {np.linalg.inv(hui.Hview)}')

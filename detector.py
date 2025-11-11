@@ -10,12 +10,13 @@ Contiene 3 clases:
 - SegmentsAnnotator: clase para dibujar segmentos sobre una imagen.
 - HoughSpace: clase para calcular el espacio de Hough y sus histogramas.
 
+Status:
+- modificado para carril 7.py, que busca orientación y líneas de carril
+- adopta histograma 2D par par
 """
 
 from __future__ import annotations  # sólo para hint Segments en init
 import numpy as np
-#from numpy.typing import NDArray
-#from typing import Any
 import cv2 as cv
 import math
 from typing import Callable
@@ -384,19 +385,19 @@ class SegmentsAnnotator:
 
 class HoughSpace:
     # Parámetros de construcción
-    angleBins:int=10        # número de bins para ángulos
-    maxDistanceAsLanes:int=4# máxima distancia a considerar, en anchos de carril
-    laneBins:int=4          # número de bins en un carril
-    laneWidth:int=210       # ancho de un carril en coordenadas cenitales
+    howManyAngleBins:int=10     # número de bins para ángulos
+    maxLanes:int=4    # máxima distancia a considerar, en anchos de carril
+    howManyBinsInALane:int=4    # número de bins en un carril
+    laneWidthInPixels:int=210   # ancho de un carril en coordenadas cenitales
 
     # Calculados en __init__()
-    centralAngleBin:int     # angleBins // 2
-    angle2index:float       # angleBins / math.pi
+    centralAngleBin:int     # howManyAngleBins // 2
+    angle2index:float       # howManyAngleBins / math.pi
     distance2index: float   # laneBins / laneWidth
-    maxDistanceInPixels:int # laneWidth * maxDistanceAsLanes
+    #maxDistance:int         # laneWidth * maxDistanceAsLanes, no se usa
     centralDistanceBin:int  # math.ceil(laneBins * maxDistanceAsLanes)
     referenceAngleBin:int   # centralAngleBin
-    distanceBins:int        # 2 * centralDistanceBin + 1
+    howManyDistanceBins:int # 2 * centralDistanceBin
 
     # Computados en assign2Bins()
     angleIndices:np.ndarray     # array paralelo a los segmentos, con índices de bins para ángulos
@@ -408,37 +409,38 @@ class HoughSpace:
     maxVal:float                # valor máximo de houghSpace
 
     # Computados en computeAngleHistogram() y computeLaneHistogram()
-    angleHistogram:np.ndarray    # histograma de ángulos
-    laneHistogram:np.ndarray     # histograma de carriles
+    angleHistogram:np.ndarray    # histograma 1D de ángulos, sumando todas las distancias
+    laneHistogram:np.ndarray     # histograma 1D del carril máximo
 
-    def __init__(self, angleBins:int=10, maxDistanceAsLanes:int=4, laneBins:int=4, laneWidth:int=210):
+    def __init__(self, howManyAngleBins:int=10, maxLanes:int=4, howManyBinsInALane:int=4, laneWidthInPixels:int=210):
         """
         Constructor
         Define la cantidad de bins, el factor de distancias y ángulos a los bins correspondientes.
-        angleBins debe ser par si quieres mirar ángulos perpendiculares.
-        Los ángulos van de 0 a pi, ambos extremos son horizontales, por lo que pi/2 es vertical.
+        howManyAngleBins debe ser par si se quiere tener bins de ángulos perpendiculares.
+        Los ángulos van de 0 a pi, 0 y pi son horizontales, pi/2 es vertical.
         distanceBins debe ser impar, por lo que la distancia cero está en el medio,
         a la izquierda van las distancias negativas, a la derecha las positivas.
 
         Arguments:
-        - angleBins: número de bins para ángulos de 0 a pi, p/2 es vertical, se recomienda número par.
+        - howManyAngleBins: número de bins para ángulos de 0 a pi, p/2 es vertical, se recomienda número par.
         - maxDistanceAsLanes: borde lejano para los bins de distancias, en carriles.
         - laneBins: número de bins en un carril.
         - laneWidth: ancho de un carril en píxeles.
         """
 
-        self.angleBins = angleBins
-        self.maxDistanceAsLanes = maxDistanceAsLanes
-        self.laneBins = laneBins
-        self.laneWidth = laneWidth
+        self.howManyAngleBins = howManyAngleBins
+        self.maxLanes = maxLanes
+        self.howManyBinsInALane = howManyBinsInALane
+        self.laneWidthInPixels = laneWidthInPixels
 
-        self.centralAngleBin = angleBins // 2
-        self.angle2index = angleBins / math.pi
-        self.distance2index = laneBins / laneWidth
-        self.maxDistanceInPixels = laneWidth * maxDistanceAsLanes
-        self.centralDistanceBin = math.ceil(laneBins * maxDistanceAsLanes)
+        self.centralAngleBin = howManyAngleBins // 2
         self.referenceAngleBin = self.centralAngleBin
-        self.distanceBins = 2 * self.centralDistanceBin + 1
+        self.angle2index = howManyAngleBins / math.pi
+
+        self.distance2index = howManyBinsInALane / laneWidthInPixels
+        self.centralDistanceBin = math.ceil(howManyBinsInALane * maxLanes)
+        self.howManyDistanceBins = 2 * self.centralDistanceBin
+        #self.maxDistance = laneWidthInPixels * maxLanes
 
     def assign2Bins(self, segments:Segments):
         """
@@ -448,8 +450,8 @@ class HoughSpace:
         Esto afecta a distanceIndices, los últimos bins en ambos extremos agregarán todas las distancias mayores que maxDistanceInPixels.
         """
 
-        self.angleIndices = np.clip((segments.angles * self.angle2index).astype(int), 0, self.angleBins-1)
-        self.distanceIndices = np.clip((segments.distances * self.distance2index + self.centralDistanceBin).astype(int), 0, self.distanceBins-1)
+        self.angleIndices = np.clip((segments.angles * self.angle2index).astype(int), 0, self.howManyAngleBins-1)
+        self.distanceIndices = np.clip((segments.distances * self.distance2index + self.centralDistanceBin).astype(int), 0, self.howManyDistanceBins-1)
 
     def getIndicesFromBin(self, angleIndex:int, distanceIndex:int)->np.ndarray:
         """
@@ -479,11 +481,11 @@ class HoughSpace:
         - el espacio de Hough.
         """
 
-        self.houghSpace = np.zeros((self.angleBins, self.distanceBins), np.float32)
+        self.houghSpace = np.zeros((self.howManyAngleBins, self.howManyDistanceBins), np.float32)
         np.add.at(self.houghSpace, (self.angleIndices, self.distanceIndices), votes)
 
         self.maxLoc = np.unravel_index(np.argmax(self.houghSpace), self.houghSpace.shape)
-        self.maxVal = self.houghSpace[self.maxLoc]
+        self.maxVal = float(self.houghSpace[self.maxLoc])   # este cast debería ser implícito, pero Pylint lo reclama
 
         self.computeAngleHistogram()
         self.computeLaneHistogram()
@@ -526,11 +528,12 @@ class HoughSpace:
 
     def getVisualization(self, scale:float=0.0, showMax:bool=False)->np.ndarray:
         """
-        Produce y devuelve una imagen de color mapeado del histograma producido en computeVotes(),
+        Produce y devuelve una imagen de color mapeado del histograma 2D producido en computeVotes(),
         opcionalmente resaltando el pico si showMax es True.
 
         Arguments:
         - scale: factor de escala para la imagen.
+        - showMax: si se debe resaltar el pico.
 
         Returns:
         - la visualización del espacio de Hough.
@@ -545,22 +548,29 @@ class HoughSpace:
 
         return houghSpaceColor
 
-    def pasteVisualization(self, image:np.ndarray, borderColor:tuple=(0,128,255), scale:float=0.0, showMax:bool=False)->np.ndarray:
+    def pasteVisualization(self, image:np.ndarray, houghSpaceColor:np.ndarray|None = None, borderColor:tuple=(0,128,255), scale:float=0.0, showMax:bool=False)->np.ndarray:
         """
         Pega la visualización del espacio de Hough sobre una imagen, en la esquina inferior derecha.
-        También muestra histogramas 1D de ángulos y distancias.
+        Muestra histogramas 1D de ángulos y distancias.
+        Decora con ejes y bordes si borderColor no es None.
+        Se anota sobre la imagen provista.
 
         Arguments:
         - image: la imagen para pegar la visualización.
         - borderColor: color para el borde.
         - scale: factor de escala para los histogramas.
         - showMax: si se debe resaltar el pico en la visualización.
+        - houghSpaceColor: si se proporciona, se usa esta visualización en lugar de crear una nueva.
 
         Returns:
-        - image: la imagen con la visualización.
+        - houghSpaceColor: la visualización del espacio de Hough
+
+        Si se proporciona houghSpaceColor, se debe indicar la escala.
+        Para más anotaciones, las coordenadas del espacio de Hough son -houghSpaceColor.shape[:2]
         """
 
-        houghSpaceColor = self.getVisualization(scale, showMax)
+        if(houghSpaceColor is None):
+            houghSpaceColor = self.getVisualization(scale, showMax)
         
         ih, iw, _ = image.shape
         hh, hw, _ = houghSpaceColor.shape

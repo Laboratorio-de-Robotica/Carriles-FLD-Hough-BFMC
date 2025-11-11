@@ -152,8 +152,8 @@ while(True):
     # Draw main axis
     origin = (imAnnotated.shape[1]//2, (imAnnotated.shape[0]+hui.limit)//2)
     zenithalOrigin = det.projectSegments(origin, hui.Hview, segmentsShape=False, printFlag=printFlag).reshape(-1)
-    zenithalForward = zenithalOrigin - mainZenithalDelta * hs.laneWidth/2
-    zenithalSide = zenithalOrigin + np.array((mainZenithalDelta[1], -mainZenithalDelta[0])) * hs.laneWidth/2
+    zenithalForward = zenithalOrigin - mainZenithalDelta * hs.laneWidthInPixels/2
+    zenithalSide = zenithalOrigin + np.array((mainZenithalDelta[1], -mainZenithalDelta[0])) * hs.laneWidthInPixels/2
     mainAxisZenithalSegments = np.array([zenithalOrigin, zenithalForward, zenithalOrigin, zenithalSide]).reshape(-1, 2, 2)
     mainAxisSegments = det.projectSegments(mainAxisZenithalSegments, hui.Hview, inverse=True, printFlag=printFlag)
     annotations.drawSegments(imAnnotated, mainAxisSegments, color=(255,255,0))
