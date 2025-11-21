@@ -384,7 +384,19 @@ class SegmentsAnnotator:
         return image
 
 class HoughSpace:
-    # Parámetros de construcción
+    """
+    Clase para calcular el histograma denominado espacio de Hough.
+
+    shape(howManyAngleBins, howManyDistanceBins), par par
+
+    Ángulos: 0..pi (dos cuadrantes), 0 y pi son horizontales, pi/2 es vertical.
+    Líneas longitudinates se encuentran en pi/4..3pi/4 (octantes 2 y 3).
+
+    Distancias: en píxeles, a la izquierda negativas, a la derecha positivas.
+    Discontinuidad en ángulo 0 y pi (horizontal).
+    Distancias positivas en ángulo 0 son negativas en ángulo pi.
+    """
+    # Parámetros de construcción: los valores predeterminados se muestran aquí pero se asignan en __init__()
     howManyAngleBins:int=10     # número de bins para ángulos
     maxLanes:int=4    # máxima distancia a considerar, en anchos de carril
     howManyBinsInALane:int=4    # número de bins en un carril
@@ -418,14 +430,14 @@ class HoughSpace:
         Define la cantidad de bins, el factor de distancias y ángulos a los bins correspondientes.
         howManyAngleBins debe ser par si se quiere tener bins de ángulos perpendiculares.
         Los ángulos van de 0 a pi, 0 y pi son horizontales, pi/2 es vertical.
-        distanceBins debe ser impar, por lo que la distancia cero está en el medio,
-        a la izquierda van las distancias negativas, a la derecha las positivas.
+        distanceBins: a la izquierda van las distancias negativas, a la derecha las positivas.
+
 
         Arguments:
         - howManyAngleBins: número de bins para ángulos de 0 a pi, p/2 es vertical, se recomienda número par.
-        - maxDistanceAsLanes: borde lejano para los bins de distancias, en carriles.
-        - laneBins: número de bins en un carril.
-        - laneWidth: ancho de un carril en píxeles.
+        - maxLanes: excursión (-maxLanes:+maxLanes) .
+        - howManyBinsInALane: número de bins en un carril.
+        - laneWidthInPixels: ancho de un carril en píxeles.
         """
 
         self.howManyAngleBins = howManyAngleBins
@@ -435,12 +447,11 @@ class HoughSpace:
 
         self.centralAngleBin = howManyAngleBins // 2
         self.referenceAngleBin = self.centralAngleBin
-        self.angle2index = howManyAngleBins / math.pi
+        self.angle2index = howManyAngleBins / np.pi
 
         self.distance2index = howManyBinsInALane / laneWidthInPixels
         self.centralDistanceBin = math.ceil(howManyBinsInALane * maxLanes)
         self.howManyDistanceBins = 2 * self.centralDistanceBin
-        #self.maxDistance = laneWidthInPixels * maxLanes
 
     def assign2Bins(self, segments:Segments):
         """
@@ -450,7 +461,7 @@ class HoughSpace:
         Esto afecta a distanceIndices, los últimos bins en ambos extremos agregarán todas las distancias mayores que maxDistanceInPixels.
         """
 
-        self.angleIndices = np.clip((segments.angles * self.angle2index).astype(int), 0, self.howManyAngleBins-1)
+        self.angleIndices    = np.clip((segments.angles    * self.angle2index).astype(int), 0, self.howManyAngleBins-1)
         self.distanceIndices = np.clip((segments.distances * self.distance2index + self.centralDistanceBin).astype(int), 0, self.howManyDistanceBins-1)
 
     def getIndicesFromBin(self, angleIndex:int, distanceIndex:int)->np.ndarray:
@@ -582,7 +593,7 @@ class HoughSpace:
 
         if(scale != 0.0):
             angleHistogram = cv.resize(self.angleHistogram, None, fx=scale, fy=scale, interpolation=cv.INTER_NEAREST)
-            laneZone = cv.resize(self.laneHistogram, None, fx=scale, fy=scale, interpolation=cv.INTER_NEAREST)
+            laneZone       = cv.resize(self.laneHistogram,  None, fx=scale, fy=scale, interpolation=cv.INTER_NEAREST)
         else:
             angleHistogram = self.angleHistogram
             laneZone = self.laneHistogram
