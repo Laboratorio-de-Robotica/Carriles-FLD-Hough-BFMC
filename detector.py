@@ -370,7 +370,7 @@ class SegmentsAnnotator:
             assert isinstance(segmentColor, tuple)
             pointA = tuple((offset + scale * segment[0]).astype(int))
             pointB = tuple((offset + scale * segment[1]).astype(int))
-            cv.line(image, pointA, pointB, color=segmentColor, thickness=thickness)
+            cv.line(image, pointA, pointB, color=segmentColor, thickness=thickness, lineType=cv.LINE_AA)
             if(withPoints):
                 cv.circle(image, pointA, 2, segmentColor)
                 cv.circle(image, pointB, 2, segmentColor)
@@ -399,7 +399,7 @@ class HoughSpace:
     # Parámetros de construcción: los valores predeterminados se muestran aquí pero se asignan en __init__()
     howManyAngleBins:int=10     # número de bins para ángulos
     maxLanes:int=4    # máxima distancia a considerar, en anchos de carril
-    howManyBinsInALane:int=4    # número de bins en un carril
+    howManyBinsInALane:int=5    # número de bins en un carril, conviene que sea impar
     laneWidthInPixels:int=210   # ancho de un carril en coordenadas cenitales
 
     # Calculados en __init__()
@@ -424,7 +424,7 @@ class HoughSpace:
     angleHistogram:np.ndarray    # histograma 1D de ángulos, sumando todas las distancias
     laneHistogram:np.ndarray     # histograma 1D del carril máximo
 
-    def __init__(self, howManyAngleBins:int=10, maxLanes:int=4, howManyBinsInALane:int=4, laneWidthInPixels:int=210):
+    def __init__(self, howManyAngleBins:int=10, maxLanes:int=4, howManyBinsInALane:int=5, laneWidthInPixels:int=210):
         """
         Constructor
         Define la cantidad de bins, el factor de distancias y ángulos a los bins correspondientes.

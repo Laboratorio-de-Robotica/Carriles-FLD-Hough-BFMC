@@ -108,7 +108,7 @@ hui.calculateRoi()
 - lane line: 10px
 - angles 0..pi
 '''
-hs = det.HoughSpace()
+hs = det.HoughSpace(howManyBinsInALane=5)
 lastAngleBin = hs.howManyAngleBins // 2
 annotations = det.SegmentsAnnotator()
 zenithalAnnotations = det.SegmentsAnnotator(thickness=2, colorMap=det.SegmentsAnnotator.colorMapBGR)
@@ -274,10 +274,10 @@ while(True):
 
     annotations.drawSegments(imAnnotated, 
                              segments.coords[leftLaneSegmentsIndices], 
-                             color=(0,128,255), thickness=2)
+                             color=(0,128,255), thickness=4)
     annotations.drawSegments(imAnnotated,
                              segments.coords[rightLaneSegmentsIndices], 
-                             color=(255,0,128), thickness=2)
+                             color=(255,0,128), thickness=4)
 
 
     # draw main axes
@@ -292,7 +292,6 @@ while(True):
     # Cyan: projected main axes
     annotations.drawSegments(imAnnotated, mainAxisSegments, color=(255,255,0))
 
-    cv.imshow('Main segments', imAnnotated)
 
     # Zenithal visualization =====================
 
@@ -342,7 +341,12 @@ while(True):
             arrowColor = (192,0, 192)
 
         arrow = base - (laneVersor * 100).astype(np.int32)
-        cv.arrowedLine(zenithalIm, base.astype(int), arrow.astype(int), arrowColor, 4)
+        cv.arrowedLine(zenithalIm, base.astype(int), arrow.astype(int), arrowColor, 4, line_type=cv.LINE_AA)
+
+        perpectiveArrow = det.projectSegments(np.stack([base, arrow]), hui.Hview, inverse=True).astype(np.int32)
+        #print('perpectiveArrow', perpectiveArrow.shape, perpectiveArrow)
+        cv.arrowedLine(imAnnotated, tuple(perpectiveArrow[0]), tuple(perpectiveArrow[1]), arrowColor, 4, line_type=cv.LINE_AA)
+        #annotations.drawSegments(imAnnotated, perpectiveArrow, color=arrowColor, thickness=4)
 
     # autoshrink
     while(zenithalIm.shape[0] > 700):
@@ -355,7 +359,14 @@ while(True):
     cv.drawMarker(zenithalIm, tuple(angleBinCoords), (0,0,255), cv.MARKER_SQUARE, 4)
     #print('Angle bin:', maxAngleHistogramIndex)
 
+    # Texto
+    x=10
+    h=20
+    color=(255,255,255)
+    cv.putText(imAnnotated, f'linea izquierda: {leftLaneDetected}', (x,h), cv.FONT_HERSHEY_SIMPLEX, 0.4, color)
+    cv.putText(imAnnotated, f'linea derecha: {rightLaneDetected}', (x,h*2), cv.FONT_HERSHEY_SIMPLEX, 0.4, color)
 
+    cv.imshow('Main segments', imAnnotated)
     cv.imshow('zenithal wide', zenithalIm)
 
     endAnnotationt = timer()
