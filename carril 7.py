@@ -359,12 +359,18 @@ while(True):
     cv.drawMarker(zenithalIm, tuple(angleBinCoords), (0,0,255), cv.MARKER_SQUARE, 4)
     #print('Angle bin:', maxAngleHistogramIndex)
 
+    # Sombra para el texto
+    imAnnotated[0:50, 0:150] //= 2
+
     # Texto
     x=10
     h=20
     color=(255,255,255)
     cv.putText(imAnnotated, f'linea izquierda: {leftLaneDetected}', (x,h), cv.FONT_HERSHEY_SIMPLEX, 0.4, color)
     cv.putText(imAnnotated, f'linea derecha: {rightLaneDetected}', (x,h*2), cv.FONT_HERSHEY_SIMPLEX, 0.4, color)
+
+
+
 
     cv.imshow('Main segments', imAnnotated)
     cv.imshow('zenithal wide', zenithalIm)
