@@ -116,6 +116,13 @@ umbralCanny = 160
 printFlag = False
 fld = cv.ximgproc.createFastLineDetector(canny_th1 = umbralCanny, canny_th2 = umbralCanny*3, do_merge=True)
 
+
+# Inicialización para suprimir warnings
+leftLaneAvgAngle = 0.0
+leftLaneAvgDistance = 0.0
+rightLaneAvgAngle = 0.0
+rightLaneAvgDistance = 0.0
+
 while(True):
     # video feed
     if(play):
@@ -180,7 +187,7 @@ while(True):
     
 
     '''
-    Dirección principal
+    Brújula, dirección del segmento mayor, aproximación simple a la dirección principal.
     Se toma el rango pico, el de más votos, y dentro de él, el segmento más largo.
     peakZenithalVersor es un vector unitario que apunta en la dirección de ese segmento.
     '''
@@ -190,7 +197,7 @@ while(True):
 
 
     '''
-    Dirección principal alternativa
+    Dirección principal
     Como las dos direcciones principales son perpendiculares,
     se busca el rango angular máximo sumando ambos histogramas 1D.
     '''
@@ -255,10 +262,17 @@ while(True):
 
     endProcesst = timer()
 
-    # Annotations & visualization
+    '''
+    Visualización y anotación
+
+    Esta sección no está optimizada para velocidad.
+    No debería ejecutarse en el auto.
+    Incluye conversiones de tipo innecesarias, sólo para suprimir warnings equivocados,
+    y la operación lenta warpPerspective.
+    '''
     startAnnotationt = timer()
 
-    # Perspective visualization =====================
+    # Visualización de perspectiva =====================
 
     imAnnotated = cv.cvtColor(imGray//2, cv.COLOR_GRAY2BGR)
     
@@ -280,20 +294,33 @@ while(True):
                              color=(255,0,128), thickness=4)
 
 
-    # draw main axes
+    # Brújula
     origin = (imAnnotated.shape[1]//2, (imAnnotated.shape[0]+hui.limit)//2)
-    assert hui.Hview is not None
+    zenithalOrigin = det.projectSegments(origin, hui.Hview, segmentsShape=False, printFlag=printFlag).reshape(-1)
+    peakZenithalVector = peakZenithalVersor * hs.laneWidthInPixels/4
+    peakZenithalPerpendicularVector = np.array((peakZenithalVector[1], -peakZenithalVector[0]))
+    mainAxisZenithalSegments = np.array([
+            zenithalOrigin + peakZenithalVector,
+            zenithalOrigin - peakZenithalVector,
+            zenithalOrigin - peakZenithalPerpendicularVector,
+            zenithalOrigin + peakZenithalPerpendicularVector
+        ]).reshape(-1, 2, 2)
+    mainAxisSegments = det.projectSegments(mainAxisZenithalSegments, hui.Hview, inverse=True, printFlag=printFlag)
+
+    '''
+    origin = (imAnnotated.shape[1]//2, (imAnnotated.shape[0]+hui.limit)//2)
     zenithalOrigin = det.projectSegments(origin, hui.Hview, segmentsShape=False, printFlag=printFlag).reshape(-1)
     zenithalForward = zenithalOrigin - peakZenithalVersor * hs.laneWidthInPixels/2
     zenithalSide = zenithalOrigin + np.array((peakZenithalVersor[1], -peakZenithalVersor[0])) * hs.laneWidthInPixels/2
     mainAxisZenithalSegments = np.array([zenithalOrigin, zenithalForward, zenithalOrigin, zenithalSide]).reshape(-1, 2, 2)
     mainAxisSegments = det.projectSegments(mainAxisZenithalSegments, hui.Hview, inverse=True, printFlag=printFlag)
+    '''
 
     # Cyan: projected main axes
     annotations.drawSegments(imAnnotated, mainAxisSegments, color=(255,255,0))
 
 
-    # Zenithal visualization =====================
+    # Visualización cenital =====================
 
     # zenithal fustrum view
     zenithalIm = cv.warpPerspective(im, hui.Hview, tuple(hui.zenithalSize))
@@ -341,7 +368,7 @@ while(True):
             arrowColor = (192,0, 192)
 
         arrow = base - (laneVersor * 100).astype(np.int32)
-        cv.arrowedLine(zenithalIm, base.astype(int), arrow.astype(int), arrowColor, 4, line_type=cv.LINE_AA)
+        cv.arrowedLine(zenithalIm, tuple(base.astype(int)), tuple(arrow.astype(int)), arrowColor, 4, line_type=cv.LINE_AA)
 
         perpectiveArrow = det.projectSegments(np.stack([base, arrow]), hui.Hview, inverse=True).astype(np.int32)
         #print('perpectiveArrow', perpectiveArrow.shape, perpectiveArrow)
@@ -411,8 +438,8 @@ while(True):
                 print(f'H2 inv: {np.linalg.inv(hui.Hview)}')
                 print(f'origin: {origin}')
                 print(f'zenithalOrigin: {zenithalOrigin}')
-                print(f'zenithalForward: {zenithalForward}')
-                print(f'zenithalSide: {zenithalSide}')
+                #print(f'zenithalForward: {zenithalForward}')
+                #print(f'zenithalSide: {zenithalSide}')
                 print(f'mainAxisSegments: {mainAxisZenithalSegments}')
                 print(f'mainAxisSegmentsPerspective: {mainAxisSegments}')
                 #print(*mainSegmentsIndices)
