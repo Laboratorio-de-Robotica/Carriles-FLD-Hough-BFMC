@@ -429,7 +429,7 @@ class HoughSpace:
         Constructor
         Define la cantidad de bins, el factor de distancias y ángulos a los bins correspondientes.
         howManyAngleBins debe ser par si se quiere tener bins de ángulos perpendiculares.
-        Los ángulos van de 0 a pi, 0 y pi son horizontales, pi/2 es vertical.
+        Los ángulos van de 0 a pi, 0 y pi son horizontales, pi/2 es vertical, giran en sentido horario.
         distanceBins: a la izquierda van las distancias negativas, a la derecha las positivas.
 
 
