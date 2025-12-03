@@ -673,7 +673,7 @@ class LaneSensor:
         self.im = im
         self.imGray = cv.cvtColor(im, cv.COLOR_BGR2GRAY)
 
-        # Segmentos
+        # Segmentos: cada segmento tiene su izquierda clara y su derecha oscura
         startFLDt = timer()
         lines = self.fld.detect(self.imGray[self.hui.limit:]) # type: ignore
         self.FLDT = timer() - startFLDt
@@ -775,6 +775,10 @@ class LaneSensor:
 
         '''
         Encontrar los segmentos de las líneas izquierda y derecha de carril en cada bin.
+        Al cacular el promedio de distancia se desplaza 50% del ancho de la línea hacia el lado claro, 
+        hacia el centro de la línea.
+        El ancho de línea es 10 px, no está en ninguna variable, 
+        está hardcodeado como +-5.0 en el cómputo de displacements
         '''
         leftLaneSegmentsIndices = self.hs.getIndicesFromBin(*leftLaneLineIndex)
         leftLaneDetected = len(leftLaneSegmentsIndices) > 0
@@ -785,7 +789,8 @@ class LaneSensor:
             leftLaneAngle    = self.zenithals.angles[leftLaneSegmentsIndices]
             leftLaneDistances = self.zenithals.distances[leftLaneSegmentsIndices]
             leftLaneAvgAngle = np.average(leftLaneAngle, weights=leftLaneLengths)
-            leftLaneAvgDistance = np.average(leftLaneDistances, weights=leftLaneLengths)
+            displacements = np.where(self.zenithals.coords[leftLaneSegmentsIndices,0,1]<self.zenithals.coords[leftLaneSegmentsIndices,1,1], 5.0, -5.0)
+            leftLaneAvgDistance = np.average(leftLaneDistances+displacements, weights=leftLaneLengths)
 
         rightLaneSegmentsIndices = self.hs.getIndicesFromBin(*rightLaneLineIndex)
         rightLaneDetected = len(rightLaneSegmentsIndices) > 0
@@ -796,7 +801,8 @@ class LaneSensor:
             rightLaneAngle    = self.zenithals.angles[rightLaneSegmentsIndices]
             rightLaneDistances = self.zenithals.distances[rightLaneSegmentsIndices]
             rightLaneAvgAngle = np.average(rightLaneAngle, weights=rightLaneLengths)
-            rightLaneAvgDistance = np.average(rightLaneDistances, weights=rightLaneLengths)
+            displacements = np.where(self.zenithals.coords[rightLaneSegmentsIndices,0,1]<self.zenithals.coords[rightLaneSegmentsIndices,1,1], 5.0, -5.0)
+            rightLaneAvgDistance = np.average(rightLaneDistances+displacements, weights=rightLaneLengths)
 
         fullLaneDetected = leftLaneDetected and rightLaneDetected
         if fullLaneDetected:
@@ -877,6 +883,8 @@ class LaneSensor:
             segmentIndices = np.concatenate(segmentIndicesList)
             minDistanceIndex = abs(self.zenithals.distances[segmentIndices]).argmin()
             minDistanceIndex = segmentIndices[minDistanceIndex]
+
+        # TODO: verificar si el segmento está dentro del carril, descartarlo si no es así
 
         return minDistanceIndex>-1, abs(self.zenithals.distances[minDistanceIndex]), minDistanceIndex
 

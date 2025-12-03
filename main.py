@@ -122,7 +122,6 @@ fld = cv.ximgproc.createFastLineDetector(canny_th1 = umbralCanny, canny_th2 = um
 laneSensor = det.LaneSensor(hs, fld, frameSize, hui)
 hui.calculateRoi()
 
-
 annotations = det.SegmentsAnnotator()
 zenithalAnnotations = det.SegmentsAnnotator(thickness=2, colorMap=det.SegmentsAnnotator.colorMapBGR)
 
@@ -155,11 +154,11 @@ while(True):
 
     # Detección de segmentos y Hough ======================
 
-    segments = laneSensor.perspectives
+    perspectives = laneSensor.perspectives
     zenithals = laneSensor.zenithals
 
     hs.assign2Bins(zenithals)
-    hs.computeVotes(zenithals.lengths if userVisualizationOption else segments.lengths)   # alternative: zenithals.lengths
+    hs.computeVotes(zenithals.lengths if userVisualizationOption else perspectives.lengths)   # alternative: zenithals.lengths
     hs.computeAngleHistogram()
 
 
@@ -198,24 +197,14 @@ while(True):
     imAnnotated = cv.cvtColor(imGray//2, cv.COLOR_GRAY2BGR)
     
 
-    # Pallette:
-    colors = np.empty((segments.n, 3), dtype=np.uint8)
-    colors[hs.angleIndices == laneSensor.mainAngleBin] = np.array([0,255,0])   # main direction
-    colors[(hs.angleIndices != laneSensor.mainAngleBin)] = np.array([0,0,128], np.uint8) # other directions
-
-    '''
-    # draw segments
-    annotations.drawSegments(imAnnotated, segments, color=colors)
-    '''
-
     # Líneas de carril
     if leftLaneDetected:
         annotations.drawSegments(imAnnotated, 
-                                segments.coords[laneSensor.leftLaneSegmentsIndices], 
+                                perspectives.coords[laneSensor.leftLaneSegmentsIndices], 
                                 color=(0,128,255), thickness=4)
     if rightLaneDetected:
         annotations.drawSegments(imAnnotated,
-                                segments.coords[laneSensor.rightLaneSegmentsIndices], 
+                                perspectives.coords[laneSensor.rightLaneSegmentsIndices], 
                                 color=(255,0,128), thickness=4)
 
 
@@ -246,13 +235,20 @@ while(True):
     cv.drawMarker(zenithalIm, zenithals.getPointAsIntTuple(zenithalOrigin), (0,255,0), cv.MARKER_CROSS, 20, 3)
 
     # segments, and message
-    zenithalAnnotations.drawSegments(zenithalIm, zenithals, #intensities=zenithals.angles/3.17,
+    colors = np.empty((perspectives.n, 3), dtype=np.uint8)
+    colors[hs.angleIndices == laneSensor.mainAngleBin] = np.array([0,255,0])   # main direction
+    colors[(hs.angleIndices != laneSensor.mainAngleBin)] = np.array([0,0,128], np.uint8) # other directions
+    zenithalAnnotations.drawSegments(zenithalIm, zenithals,
                                     color=colors,
                                     message= f'FLD: {(laneSensor.FLDT)*1000:.0f} ms'
                                     f'\nProcess: {(endProcesst-startProcesst)*1000:.0f} ms'
                                     f'\nSegments {str(len(zenithals.coords))}'
                                     f"\nHough votes: {'zenithals' if userVisualizationOption else 'segments'}"
                                    )
+    '''
+    # Dibujar todos los segmetnos
+    annotations.drawSegments(imAnnotated, perspectives, color=colors)
+    '''
 
     # Líneas de carril aproximadas
     if leftLaneDetected:
@@ -263,9 +259,6 @@ while(True):
         zenithalAnnotations.drawSegments(zenithalIm, 
                                         zenithals.coords[laneSensor.rightLaneSegmentsIndices], 
                                         color=(255,0,128))
-
-    # Brújula
-    zenithalAnnotations.drawSegments(zenithalIm, mainAxisZenithalSegments, color=(255,255,0))
 
     # Dirección central del carril
     if laneDetected:
@@ -282,17 +275,16 @@ while(True):
 
 
         # Línea de fin de carril (la transversal más cercana)
-        if endOfLaneIndex > -1:
+        if endOfLaneDetected:
             zenithalAnnotations.drawSegments(zenithalIm,
                                             zenithals.coords[endOfLaneIndex].reshape(-1,2,2),
                                             color=(128,128,255), thickness=4)
             annotations.drawSegments(imAnnotated,
-                                            segments.coords[endOfLaneIndex].reshape(-1,2,2),
+                                            perspectives.coords[endOfLaneIndex].reshape(-1,2,2),
                                             color=(128,128,255), thickness=4)
 
 
-
-    # autoshrink
+    # Achicar la imagen cenital si es muy grande
     while(zenithalIm.shape[0] > 700):
         zenithalIm = cv.resize(zenithalIm, None, fx=0.5, fy=0.5, interpolation=cv.INTER_LINEAR)
 
@@ -312,7 +304,6 @@ while(True):
     cv.putText(imAnnotated, f'linea derecha: {rightLaneDetected}', (x,h*2), cv.FONT_HERSHEY_SIMPLEX, 0.4, color)
     if endOfLaneDetected:
         cv.putText(imAnnotated, f'fin de carril: {endOfLaneDistance:.2f}', (x,h*3), cv.FONT_HERSHEY_SIMPLEX, 0.4, color)
-
 
 
     cv.imshow('Main segments', imAnnotated)
@@ -373,7 +364,7 @@ while(True):
                 '''
             case 'o':
                 # print lane line info
-                print('Longitud de línea de fin de carril', segments.lengths[endOfLaneIndex] if endOfLaneIndex>-1 else 'N/A')
+                print('Longitud de línea de fin de carril', perspectives.lengths[endOfLaneIndex] if endOfLaneIndex>-1 else 'N/A')
                 '''
                 if endOfLaneDetected:
                     for bin in binIndices:
