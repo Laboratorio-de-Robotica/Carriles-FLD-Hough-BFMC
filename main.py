@@ -160,8 +160,6 @@ while(True):
 
     hs.assign2Bins(zenithals)
     hs.computeVotes(zenithals.lengths if userVisualizationOption else segments.lengths)   # alternative: zenithals.lengths
-
-    # Canonical segments
     hs.computeAngleHistogram()
 
 
@@ -173,73 +171,13 @@ while(True):
     laneDetected = leftLaneDetected or rightLaneDetected
     fullLaneDetected = leftLaneDetected and rightLaneDetected
 
-    '''
-    Línea de fin de carril, en cada esquina.
-    Es una línea perpemndicular a las líneas de carril.
-    Se buscan en el bin perpendicular al principal, más menos uno.
-    Sólo si el carril fue detectado, de otro modo busca el fin del carril.
-    mainAngleBin es la dirección del carril.
-    '''
-
-    minDistanceIndex = -1   # inicializa con -1 para "no encontrado"
+    # Línea de fin de carril
     if laneDetected:
-        perpendicularAngleHistogramIndex:int = (laneSensor.mainAngleBin + halfAngleBins) % hs.howManyAngleBins
-
-        binIndices = []
-        minSoFarBinDistance = hs.howManyDistanceBins # Infinito
-        nearIndex:int
-        binDistance:int
-        fullNearIndex:tuple
-        for i in range(-1, 2):
-            angleBin = (perpendicularAngleHistogramIndex + i) % hs.howManyAngleBins
-            negativeDistance = angleBin >= halfAngleBins
-            distanceHistogram = hs.houghSpace[angleBin]
-            #print(f'distanceHistogram: {type(distanceHistogram)}, {distanceHistogram.shape}, {distanceHistogram.dtype}')
-            populatedIndices = np.flatnonzero(distanceHistogram[:hs.centralDistanceBin] if negativeDistance else distanceHistogram[hs.centralDistanceBin:])
-            if len(populatedIndices) == 0:
-                continue
-            #print(f'populatedIndices {type(populatedIndices)}, {len(populatedIndices)}, {populatedIndices}, {populatedIndices[0]}')
-            if negativeDistance:
-                nearIndex = populatedIndices[-1]
-                binDistance = hs.centralDistanceBin - 1 - nearIndex
-            else:
-                nearIndex = populatedIndices[0]
-                binDistance = nearIndex
-
-            if binDistance > minSoFarBinDistance:
-                continue
-
-            fullNearIndex = (angleBin, nearIndex if negativeDistance else nearIndex + hs.centralDistanceBin)
-            if hs.houghSpace[fullNearIndex] < 60:
-                # umbral arbitrario de votos
-                continue
-
-            if binDistance < minSoFarBinDistance:
-                minSoFarBinDistance = binDistance
-                binIndices = [fullNearIndex]
-            else: # binDistance == minBinDistance
-                binIndices.append(fullNearIndex)
-        
-        if len(binIndices)>0:
-            segmentIndicesList = []
-            for binIndex in binIndices:
-                indicesFromBin = hs.getIndicesFromBin(*binIndex)
-                segmentIndicesList.append(indicesFromBin)
-            segmentIndices = np.concatenate(segmentIndicesList)
-            minDistanceIndex = abs(zenithals.distances[segmentIndices]).argmin()
-            minDistanceIndex = segmentIndices[minDistanceIndex]
-
-            # quitar segmentos muy cortos, de longitur < 60 px
-
+        endOfLaneDetected, endOfLaneDistance, endOfLaneIndex = laneSensor.endOfLane()
+    else:
+        endOfLaneDetected = False
 
     endProcesst = timer()
-
-
-
-
-
-
-
 
 
 
@@ -344,12 +282,12 @@ while(True):
 
 
         # Línea de fin de carril (la transversal más cercana)
-        if minDistanceIndex > -1:
+        if endOfLaneIndex > -1:
             zenithalAnnotations.drawSegments(zenithalIm,
-                                            zenithals.coords[minDistanceIndex].reshape(-1,2,2),
+                                            zenithals.coords[endOfLaneIndex].reshape(-1,2,2),
                                             color=(128,128,255), thickness=4)
             annotations.drawSegments(imAnnotated,
-                                            segments.coords[minDistanceIndex].reshape(-1,2,2),
+                                            segments.coords[endOfLaneIndex].reshape(-1,2,2),
                                             color=(128,128,255), thickness=4)
 
 
@@ -372,8 +310,8 @@ while(True):
     color=(255,255,255)
     cv.putText(imAnnotated, f'linea izquierda: {leftLaneDetected}', (x,h), cv.FONT_HERSHEY_SIMPLEX, 0.4, color)
     cv.putText(imAnnotated, f'linea derecha: {rightLaneDetected}', (x,h*2), cv.FONT_HERSHEY_SIMPLEX, 0.4, color)
-    if minDistanceIndex > -1:
-        cv.putText(imAnnotated, f'fin de carril: {abs(zenithals.distances[minDistanceIndex]):.2f}', (x,h*3), cv.FONT_HERSHEY_SIMPLEX, 0.4, color)
+    if endOfLaneDetected:
+        cv.putText(imAnnotated, f'fin de carril: {endOfLaneDistance:.2f}', (x,h*3), cv.FONT_HERSHEY_SIMPLEX, 0.4, color)
 
 
 
@@ -435,11 +373,12 @@ while(True):
                 '''
             case 'o':
                 # print lane line info
-                print('Longitud de línea de fin de carril', segments.lengths[minDistanceIndex] if minDistanceIndex>-1 else 'N/A')
-                if minDistanceIndex>-1:
+                print('Longitud de línea de fin de carril', segments.lengths[endOfLaneIndex] if endOfLaneIndex>-1 else 'N/A')
+                '''
+                if endOfLaneDetected:
                     for bin in binIndices:
                         print(f'bin: {bin[0]}, {bin[1]}, votos: {hs.houghSpace[bin]}')
-
+                '''
                 
             case 's':
                 save()

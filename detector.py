@@ -735,6 +735,7 @@ class LaneSensor:
         rightLaneAvgDistance = 0.0
 
 
+        # Sinónimo
         halfAngleBins = self.hs.centralAngleBin
 
         '''
@@ -812,6 +813,73 @@ class LaneSensor:
             return False,False,0.0,0.0
         
         return leftLaneDetected, rightLaneDetected, self.centralLaneAngle, self.centralLaneDistance
+
+    def endOfLane(self)->tuple:
+        '''
+        Detecta la línea de fin de carril en cada esquina, y mide la distancia.
+        Es una línea perpemndicular a las líneas de carril.
+        Se buscan en el bin perpendicular al principal, más menos uno.
+        Sólo si el carril fue detectado, de otro modo busca el fin del carril.
+
+        Sólo se debe invocar si el carril fue detectado.
+        self.mainAngleBin es la dirección del carril.
+
+        Returns:
+        tuple: (endOfLaneDetected:bool, endOfLaneDistance:float, endOfLaneIndex:int)
+        '''
+
+        # Sinónimo
+        halfAngleBins = self.hs.centralAngleBin
+
+        minDistanceIndex = -1   # inicializa con -1 para "no encontrado"
+        perpendicularAngleHistogramIndex:int = (self.mainAngleBin + halfAngleBins) % self.hs.howManyAngleBins
+
+        binIndices = []
+        minSoFarBinDistance = self.hs.howManyDistanceBins # Infinito
+        nearIndex:int
+        binDistance:int
+        fullNearIndex:tuple
+        for i in range(-1, 2):
+            angleBin = (perpendicularAngleHistogramIndex + i) % self.hs.howManyAngleBins
+            negativeDistance = angleBin >= halfAngleBins
+            distanceHistogram = self.hs.houghSpace[angleBin]
+            #print(f'distanceHistogram: {type(distanceHistogram)}, {distanceHistogram.shape}, {distanceHistogram.dtype}')
+            populatedIndices = np.flatnonzero(distanceHistogram[:self.hs.centralDistanceBin] if negativeDistance else distanceHistogram[self.hs.centralDistanceBin:])
+            if len(populatedIndices) == 0:
+                continue
+            #print(f'populatedIndices {type(populatedIndices)}, {len(populatedIndices)}, {populatedIndices}, {populatedIndices[0]}')
+            if negativeDistance:
+                nearIndex = populatedIndices[-1]
+                binDistance = self.hs.centralDistanceBin - 1 - nearIndex
+            else:
+                nearIndex = populatedIndices[0]
+                binDistance = nearIndex
+
+            if binDistance > minSoFarBinDistance:
+                continue
+
+            fullNearIndex = (angleBin, nearIndex if negativeDistance else nearIndex + self.hs.centralDistanceBin)
+            if self.hs.houghSpace[fullNearIndex] < 60:
+                # umbral arbitrario de votos para ignorar segmentos cortos
+                continue
+
+            if binDistance < minSoFarBinDistance:
+                minSoFarBinDistance = binDistance
+                binIndices = [fullNearIndex]
+            else: # binDistance == minBinDistance
+                binIndices.append(fullNearIndex)
+        
+        if len(binIndices)>0:
+            segmentIndicesList = []
+            for binIndex in binIndices:
+                indicesFromBin = self.hs.getIndicesFromBin(*binIndex)
+                segmentIndicesList.append(indicesFromBin)
+            segmentIndices = np.concatenate(segmentIndicesList)
+            minDistanceIndex = abs(self.zenithals.distances[segmentIndices]).argmin()
+            minDistanceIndex = segmentIndices[minDistanceIndex]
+
+        return minDistanceIndex>-1, abs(self.zenithals.distances[minDistanceIndex]), minDistanceIndex
+
 
     def afterRoi(self, hui) -> None:
         '''
