@@ -1,3 +1,6 @@
+### Copia de carril7.py , para separar en este main y en la biblioteca nueva lane.py
+
+
 '''
 Derivada de carril.py, a su vez derivada de carril6.py
 Este programa se concentra en la detección de las direcciones dominantes.
@@ -7,7 +10,7 @@ La única homografía usada en Hview.  H se carga y se guarda, y se usa exlusiva
 
 import numpy as np
 import cv2 as cv
-import detector3 as det
+import detector as det
 import HUI
 import argparse
 from timeit import default_timer as timer
@@ -99,7 +102,6 @@ def save():
 hui = HUI.Hui('hui', frameSize)
 load()
 hui.zenithalSquareSide = 250
-hui.calculateRoi()
 
 
 # Inicialización del loop principal
@@ -109,14 +111,20 @@ hui.calculateRoi()
 - lane line: 10px
 - angles 0..pi
 '''
-hs = det.HoughSpace(howManyBinsInALane=5)
-lastAngleBin = hs.howManyAngleBins // 2
+printFlag = False
+
+hs = det.HoughSpace(howManyAngleBins=10, maxLanes=4, howManyBinsInALane=5, laneWidthInPixels=210)
+halfAngleBins: int = hs.centralAngleBin #hs.howManyAngleBins // 2
+
+umbralCanny = 160
+fld = cv.ximgproc.createFastLineDetector(canny_th1 = umbralCanny, canny_th2 = umbralCanny*3, do_merge=True)
+
+laneSensor = det.LaneSensor(hs, fld, frameSize, hui)
+hui.calculateRoi()
+
+
 annotations = det.SegmentsAnnotator()
 zenithalAnnotations = det.SegmentsAnnotator(thickness=2, colorMap=det.SegmentsAnnotator.colorMapBGR)
-umbralCanny = 160
-printFlag = False
-fld = cv.ximgproc.createFastLineDetector(canny_th1 = umbralCanny, canny_th2 = umbralCanny*3, do_merge=True)
-halfAngleBins: int = hs.centralAngleBin #hs.howManyAngleBins // 2
 
 
 # Inicialización para suprimir warnings
@@ -135,133 +143,35 @@ while(True):
             im = cv.resize(im, frameSize)
         hui.anotate(im)
 
-    imGray = cv.cvtColor(im, cv.COLOR_BGR2GRAY)
-
-    # Fast Line Detector - ROI: horizonte hacia abajo
-    startFLDt = timer()
-    lines = fld.detect(imGray[hui.limit:])
-    endFLDt = timer()
-    if(lines is None):
-        # no lines, skip
+    ret = laneSensor.update(im)
+    if not ret:
         continue
+
+    imGray = laneSensor.imGray
+
+
 
     startProcesst = timer()
 
     # Detección de segmentos y Hough ======================
-    lines += [0, hui.limit, 0, hui.limit]
-    segments = det.Segments(lines)
-    segments.computeLengths()   # used for votes
 
-    # Los segmentos cenitales están en coordenadas de visualización
-    # referencePoint es el punto de origen para la parametrizacíon de Hough, al pie de la imagen, al centro.
-    zenithals = det.Segments(det.projectSegments(segments, hui.Hview),
-                             referencePoint=(hui.zenithalSize[0]//2, hui.zenithalSize[1]))
-    zenithals.computeAnglesAndDistances()   # Hough variables    
+    segments = laneSensor.perspectives
+    zenithals = laneSensor.zenithals
+
     hs.assign2Bins(zenithals)
     hs.computeVotes(zenithals.lengths if userVisualizationOption else segments.lengths)   # alternative: zenithals.lengths
 
     # Canonical segments
     hs.computeAngleHistogram()
-    maxAngleBin = np.argmax(hs.angleHistogram)
-    angleBinVariation = abs(maxAngleBin-lastAngleBin) #(maxAngleBin-lastAngleBin+1) % hs.howManyAngleBins # 0..2
-    if angleBinVariation <= 1:
-        # Normal, máximo cambio +-1
-        mainAngleBin = maxAngleBin
-        perpendicularAngleBin = (maxAngleBin + halfAngleBins) % hs.howManyAngleBins
-        status = 0
-
-    elif abs(angleBinVariation - halfAngleBins) <= 1:  #angleBinVariation >= halfAngleBins and angleBinVariation <= halfAngleBins + 2:
-        # Perpendicular
-        mainAngleBin = (maxAngleBin - halfAngleBins) % hs.howManyAngleBins
-        perpendicularAngleBin = maxAngleBin
-        status = 1
-
-    else:
-        # Perdido, tomar el máximo como principal
-        mainAngleBin = maxAngleBin
-        perpendicularAngleBin = (maxAngleBin + halfAngleBins) % hs.howManyAngleBins
-        status = 2
-
-    lastAngleBin = mainAngleBin
 
 
-    '''
-    Brújula, dirección del segmento mayor, aproximación simple a la dirección principal.
-    Se toma el rango pico, el de más votos, y dentro de él, el segmento más largo.
-    peakZenithalVersor es un vector unitario que apunta en la dirección de ese segmento.
-    '''
-    peakSegmentsIndices = hs.getIndicesFromBin(*hs.maxLoc)
-    peakSegmentIndex:int = peakSegmentsIndices[np.argmax(segments.lengths[peakSegmentsIndices])]
-    peakZenithalVersor = zenithals.deltas[peakSegmentIndex]/zenithals.lengths[peakSegmentIndex]
+    # Brújula, dirección del segmento mayor, aproximación simple a la dirección principal.
+    peakZenithalVersor = laneSensor.compass()
 
-
-    '''
-    Dirección principal
-    Como las dos direcciones principales son perpendiculares,
-    se busca el rango angular máximo sumando ambos histogramas 1D.
-    De las dos perpendiculares principales, maxAngleHistogramIndex es la que tiene más votos.
-    '''
-    foldedAngleHistogram = hs.angleHistogram.reshape(2, halfAngleBins).sum(axis=0)
-    maxFoldedAngleHistogramIndex:int = int(np.argmax(foldedAngleHistogram))
-    isMaxInFirstQuadrant: bool = hs.angleHistogram[maxFoldedAngleHistogramIndex] > hs.angleHistogram[(maxFoldedAngleHistogramIndex + halfAngleBins)]
-    maxAngleHistogramIndex:int = maxFoldedAngleHistogramIndex if isMaxInFirstQuadrant else (maxFoldedAngleHistogramIndex + halfAngleBins)
-
-    '''
-    De los dos máximos angulares perpendiculares, se toma el más cercano a la dirección principal..
-    Por ahora se define la dirección principal como la vertical.
-    Cuando funcione en el lazo de control, la dirección principal será la una combinación de las dos direcciones dominantes del cuadro anterior.
-    la que se detectó en la imagen anterior y adónde se quiere ir.
-    El rango es howManyAngleBins // 2.
-    mainAngleBin es el índice angular del carril.
-    '''
-    mainAngle:float = np.pi/2
-    offsetBin:int = int((mainAngle - np.pi/4) * hs.angle2index + 0.5)
-    mainAngleBin:int = int(maxFoldedAngleHistogramIndex - offsetBin) % halfAngleBins + offsetBin
-
-    '''
-    Identificado el índice angular principal mainAngleBin,
-    se analizará el histograma de distancias 1D para ese ángulo,
-    plegando en anchos de carril (howManyBinsInALane).
-    '''
-    distanceHistogram = hs.houghSpace[mainAngleBin]
-    foldedDistanceHistogram = distanceHistogram.reshape(-1, hs.howManyBinsInALane).sum(axis=0)
-    maxFoldedDistanceHistogramIndex = int(np.argmax(foldedDistanceHistogram))
-    leftLaneLineIndex = (mainAngleBin, hs.centralDistanceBin + maxFoldedDistanceHistogramIndex)
-    rightLaneLineIndex = (mainAngleBin, hs.centralDistanceBin + maxFoldedDistanceHistogramIndex - hs.howManyBinsInALane)
-
-    '''
-    Encontrar los segmentos de las líneas izquierda y derecha de carril en cada bin.
-    '''
-    leftLaneSegmentsIndices = hs.getIndicesFromBin(*leftLaneLineIndex)
-    leftLaneLengths   = segments.lengths[leftLaneSegmentsIndices]
-    leftLaneDetected = len(leftLaneLengths) > 0
-    if leftLaneDetected:
-        leftLaneAngle    = zenithals.angles[leftLaneSegmentsIndices]
-        leftLaneDistances = zenithals.distances[leftLaneSegmentsIndices]
-        leftLaneAvgAngle = np.average(leftLaneAngle, weights=leftLaneLengths)
-        leftLaneAvgDistance = np.average(leftLaneDistances, weights=leftLaneLengths)
-
-    rightLaneSegmentsIndices = hs.getIndicesFromBin(*rightLaneLineIndex)
-    rightLaneLengths   = segments.lengths[rightLaneSegmentsIndices]
-    rightLaneDetected = len(rightLaneLengths) > 0
-    if rightLaneDetected:
-        rightLaneAngle    = zenithals.angles[rightLaneSegmentsIndices]
-        rightLaneDistances = zenithals.distances[rightLaneSegmentsIndices]
-        rightLaneAvgAngle = np.average(rightLaneAngle, weights=rightLaneLengths)
-        rightLaneAvgDistance = np.average(rightLaneDistances, weights=rightLaneLengths)
-
+    # Carril
+    leftLaneDetected, rightLaneDetected, centralLaneAngle, centralLaneDistance = laneSensor.lane()
     laneDetected = leftLaneDetected or rightLaneDetected
     fullLaneDetected = leftLaneDetected and rightLaneDetected
-    if fullLaneDetected:
-        centralLaneAngle = (leftLaneAvgAngle + rightLaneAvgAngle) / 2
-        centralLaneDistance = (leftLaneAvgDistance + rightLaneAvgDistance) / 2
-    elif leftLaneDetected:
-        centralLaneAngle = leftLaneAvgAngle
-        centralLaneDistance = leftLaneAvgDistance - hs.laneWidthInPixels/2
-    elif rightLaneDetected:
-        centralLaneAngle = rightLaneAvgAngle
-        centralLaneDistance = rightLaneAvgDistance + hs.laneWidthInPixels/2
-
 
     '''
     Línea de fin de carril, en cada esquina.
@@ -273,7 +183,7 @@ while(True):
 
     minDistanceIndex = -1   # inicializa con -1 para "no encontrado"
     if laneDetected:
-        perpendicularAngleHistogramIndex:int = (mainAngleBin + halfAngleBins) % hs.howManyAngleBins
+        perpendicularAngleHistogramIndex:int = (laneSensor.mainAngleBin + halfAngleBins) % hs.howManyAngleBins
 
         binIndices = []
         minSoFarBinDistance = hs.howManyDistanceBins # Infinito
@@ -324,6 +234,17 @@ while(True):
 
     endProcesst = timer()
 
+
+
+
+
+
+
+
+
+
+
+
     '''
     Visualización y anotación
 
@@ -341,9 +262,8 @@ while(True):
 
     # Pallette:
     colors = np.empty((segments.n, 3), dtype=np.uint8)
-    colors[hs.angleIndices == mainAngleBin] = np.array([0,255,0] if status == 0 else [0,128,0], np.uint8) # main direction
-    colors[hs.angleIndices == perpendicularAngleBin] = np.array([255,0,0] if status == 1 else [128,0,0], np.uint8) # perpendicular direction
-    colors[(hs.angleIndices != mainAngleBin) & (hs.angleIndices != perpendicularAngleBin)] = np.array([0,0,128], np.uint8) # other directions
+    colors[hs.angleIndices == laneSensor.mainAngleBin] = np.array([0,255,0])   # main direction
+    colors[(hs.angleIndices != laneSensor.mainAngleBin)] = np.array([0,0,128], np.uint8) # other directions
 
     '''
     # draw segments
@@ -351,12 +271,14 @@ while(True):
     '''
 
     # Líneas de carril
-    annotations.drawSegments(imAnnotated, 
-                             segments.coords[leftLaneSegmentsIndices], 
-                             color=(0,128,255), thickness=4)
-    annotations.drawSegments(imAnnotated,
-                             segments.coords[rightLaneSegmentsIndices], 
-                             color=(255,0,128), thickness=4)
+    if leftLaneDetected:
+        annotations.drawSegments(imAnnotated, 
+                                segments.coords[laneSensor.leftLaneSegmentsIndices], 
+                                color=(0,128,255), thickness=4)
+    if rightLaneDetected:
+        annotations.drawSegments(imAnnotated,
+                                segments.coords[laneSensor.rightLaneSegmentsIndices], 
+                                color=(255,0,128), thickness=4)
 
 
     # Brújula
@@ -371,11 +293,7 @@ while(True):
             zenithalOrigin + peakZenithalPerpendicularVector
         ]).reshape(-1, 2, 2)
     mainAxisSegments = det.projectSegments(mainAxisZenithalSegments, hui.Hview, inverse=True, printFlag=printFlag)
-
-
-    # Brújula
-    annotations.drawSegments(imAnnotated, mainAxisSegments, 
-                             color=(255,255,0) if status == 0 else (255,128,0) if status == 1 else (64,0,255))
+    annotations.drawSegments(imAnnotated, mainAxisSegments, color=(255,255,0))
 
 
     # Visualización cenital =====================
@@ -392,19 +310,21 @@ while(True):
     # segments, and message
     zenithalAnnotations.drawSegments(zenithalIm, zenithals, #intensities=zenithals.angles/3.17,
                                     color=colors,
-                                    message= f'FLD: {(endFLDt-startFLDt)*1000:.0f} ms'
+                                    message= f'FLD: {(laneSensor.FLDT)*1000:.0f} ms'
                                     f'\nProcess: {(endProcesst-startProcesst)*1000:.0f} ms'
                                     f'\nSegments {str(len(zenithals.coords))}'
                                     f"\nHough votes: {'zenithals' if userVisualizationOption else 'segments'}"
                                    )
 
     # Líneas de carril aproximadas
-    zenithalAnnotations.drawSegments(zenithalIm, 
-                                     zenithals.coords[leftLaneSegmentsIndices], 
-                                     color=(0,128,255))
-    zenithalAnnotations.drawSegments(zenithalIm, 
-                                     zenithals.coords[rightLaneSegmentsIndices], 
-                                     color=(255,0,128))
+    if leftLaneDetected:
+        zenithalAnnotations.drawSegments(zenithalIm, 
+                                        zenithals.coords[laneSensor.leftLaneSegmentsIndices], 
+                                        color=(0,128,255))
+    if rightLaneDetected:
+        zenithalAnnotations.drawSegments(zenithalIm, 
+                                        zenithals.coords[laneSensor.rightLaneSegmentsIndices], 
+                                        color=(255,0,128))
 
     # Brújula
     zenithalAnnotations.drawSegments(zenithalIm, mainAxisZenithalSegments, color=(255,255,0))
@@ -440,10 +360,8 @@ while(True):
 
     houghSpaceColor = hs.pasteVisualization(zenithalIm, scale=4.0, showMax=True)
     vizVertex = np.array(zenithalIm.shape[1::-1])-houghSpaceColor.shape[1::-1]
-    angleBinCoords = vizVertex + (-9, 4*maxAngleHistogramIndex+1)
-    #angleBinCoords = (zenithalIm.shape[1]-houghSpaceColor.shape[1]-9, zenithalIm.shape[0]-houghSpaceColor.shape[0]+4*maxAngleHistogramIndex+1)
+    angleBinCoords = vizVertex + (-9, 4*laneSensor.maxAngleHistogramIndex+1)
     cv.drawMarker(zenithalIm, tuple(angleBinCoords), (0,0,255), cv.MARKER_SQUARE, 4)
-    #print('Angle bin:', maxAngleHistogramIndex)
 
     # Sombra para el texto
     imAnnotated[0:50, 0:150] //= 2
@@ -486,10 +404,10 @@ while(True):
                 # print detailed hough info
                 print('hs.houghSpace:', hs.houghSpace)
                 print('hs.angleHistogram:', hs.angleHistogram)
-                print('foldedAngleHistogram:', foldedAngleHistogram)
-                print(f'maxAngleHistogramIndex: {maxAngleHistogramIndex}')
-                print('hs.distanceHistogram:', distanceHistogram)
-                print('foldedDistanceHistogram:', foldedDistanceHistogram)
+                #print('foldedAngleHistogram:', foldedAngleHistogram)
+                print(f'maxAngleHistogramIndex: {laneSensor.maxAngleHistogramIndex}')
+                #print('hs.distanceHistogram:', distanceHistogram)
+                #print('foldedDistanceHistogram:', foldedDistanceHistogram)
             case 'p':   
                 # print debug info
                 printFlag = True

@@ -37,7 +37,7 @@ Para probar conviene descargar directamente el video por defecto:
   - Bins
   - HoughSpace
 
-`carril.py` es un ejemplo de uso de estas bibliotecas.
+`main.py` y `carril.py` es un ejemplo de uso de estas bibliotecas.
 
 El documento [Carriles Hough](https://docs.google.com/document/d/1SYC7nZT3Y_Wc-rTGiAnix9lpgIxPOmTWTjAN7liq6cs/edit?usp=drive_link) brinda el fundamento teórico de este proyecto.
 
@@ -45,5 +45,6 @@ El documento [Carriles Hough](https://docs.google.com/document/d/1SYC7nZT3Y_Wc-r
 
 Los archivos numerados corresponden a versiones anteriores pero que funcionan, y están destinados a ser eliminados.  Por ejemplo, ya se eliminaron carril1.py a carril4.py.
 
+- carril7.py es la versión más avanzada, usa detector3.py; versiones posteriores se implementan en main.py
 - carril5.py y carril6.py: dos implementaciones con cambios profundos, carril.py se basa en carril6.py.  carril7.py está en desarrollo.
 - detector1.py: versión anterior de detector.py, usada por carril5.py
