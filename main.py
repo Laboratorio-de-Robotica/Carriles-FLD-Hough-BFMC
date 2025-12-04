@@ -167,12 +167,12 @@ while(True):
 
     # Carril
     leftLaneDetected, rightLaneDetected, centralLaneAngle, centralLaneDistance = laneSensor.lane()
-    laneDetected = leftLaneDetected or rightLaneDetected
+    laneDetected = laneSensor.laneDetected
     fullLaneDetected = leftLaneDetected and rightLaneDetected
 
     # Línea de fin de carril
     if laneDetected:
-        endOfLaneDetected, endOfLaneDistance, endOfLaneIndex = laneSensor.endOfLane()
+        endOfLaneDetected, isItIn, endOfLaneDistance, endOfLaneIndex = laneSensor.endOfLane()
     else:
         endOfLaneDetected = False
 
@@ -276,12 +276,13 @@ while(True):
 
         # Línea de fin de carril (la transversal más cercana)
         if endOfLaneDetected:
+            color = (128,255,128) if isItIn else (128,128,255)
             zenithalAnnotations.drawSegments(zenithalIm,
                                             zenithals.coords[endOfLaneIndex].reshape(-1,2,2),
-                                            color=(128,128,255), thickness=4)
+                                            color=color, thickness=4)
             annotations.drawSegments(imAnnotated,
                                             perspectives.coords[endOfLaneIndex].reshape(-1,2,2),
-                                            color=(128,128,255), thickness=4)
+                                            color=color, thickness=4)
 
 
     # Achicar la imagen cenital si es muy grande

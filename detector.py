@@ -64,6 +64,9 @@ class Segments:
                 - Si segs es una instancia de Segments, copiará los segmentos del objeto Segments dado.
                 - Si segs es None, se creará un objeto Segments vacío, si quieres rellenarlo tú mismo.
             referencePoint (tuple): El punto de referencia para el cálculo de la distancia de Hough.
+                referencePoint no afecta las coordenadas de los segmentos, 
+                que por una cuestión de eficiencia se almacenan sin cambios.
+                Se usa en computeDistances().
 
         """
 
@@ -685,12 +688,10 @@ class LaneSensor:
         lines += [0, self.hui.limit, 0, self.hui.limit] # type: ignore
 
         self.perspectives = Segments(lines)
-        self.perspectives.computeLengths()
+        self.perspectives.computeLengths()  # para los votos ponderados de Hough
 
-        self.zenithals = Segments(projectSegments(self.perspectives, self.H),
-                                  referencePoint = np.array((self.hui.zenithalSize[0]//2, self.hui.zenithalSize[1]), np.float32)) # type: ignore
-        #self.zenithals.referencePoint = np.array([im.shape[1]/2, im.shape[0]], np.float32)
-        self.zenithals.computeAnglesAndDistances()
+        self.zenithals = Segments(projectSegments(self.perspectives, self.H), referencePoint = self.referencePoint)
+        self.zenithals.computeAnglesAndDistances()  # parámetros de Hough
 
         # Espacio de Hough
         self.hs.assign2Bins(self.zenithals)
@@ -816,8 +817,10 @@ class LaneSensor:
             self.centralLaneDistance = rightLaneAvgDistance + self.hs.laneWidthInPixels/2
         else:
             # Ningún carril detectado
+            self.laneDetected = False
             return False,False,0.0,0.0
         
+        self.laneDetected = leftLaneDetected or rightLaneDetected
         return leftLaneDetected, rightLaneDetected, self.centralLaneAngle, self.centralLaneDistance
 
     def endOfLane(self)->tuple:
@@ -834,6 +837,10 @@ class LaneSensor:
         tuple: (endOfLaneDetected:bool, endOfLaneDistance:float, endOfLaneIndex:int)
         '''
 
+        if not self.laneDetected:
+            print("Warning: LaneSensor.endOfLane(): no hay carril detectado donde buscar el fin de carril.  Antes de invocar chequear LaneSensor.laneDetected.")
+            return False, False, 0.0, -1
+        
         # Sinónimo
         halfAngleBins = self.hs.centralAngleBin
 
@@ -884,10 +891,26 @@ class LaneSensor:
             minDistanceIndex = abs(self.zenithals.distances[segmentIndices]).argmin()
             minDistanceIndex = segmentIndices[minDistanceIndex]
 
-        # TODO: verificar si el segmento está dentro del carril, descartarlo si no es así
+            # Verificar si el segmento está dentro del carril
+            coords = self.zenithals.coords[minDistanceIndex]
+            perpenducularLaneVersor = np.array([-np.sin(self.centralLaneAngle), np.cos(self.centralLaneAngle)], np.float32)
+            laneOrigin = perpenducularLaneVersor * self.centralLaneDistance + self.referencePoint
+            distanceToLaneCenter = (coords - laneOrigin) @ perpenducularLaneVersor
+            '''
+            print('coords:', coords)
+            print('laneOrigin:', laneOrigin)
+            print('perpenducularLaneVersor:', perpenducularLaneVersor)
+            print(f'distanceToLaneCenter: {distanceToLaneCenter}')
+            '''
+            halfLaneWidth = self.hs.laneWidthInPixels * 0.4    # menos de medio carril, incluye margen de seguridad
+            isItIn = not(
+                   (distanceToLaneCenter[0] >  halfLaneWidth and distanceToLaneCenter[1] >  halfLaneWidth) \
+                or (distanceToLaneCenter[0] < -halfLaneWidth and distanceToLaneCenter[1] < -halfLaneWidth) )
 
-        return minDistanceIndex>-1, abs(self.zenithals.distances[minDistanceIndex]), minDistanceIndex
 
+            return True, isItIn, abs(self.zenithals.distances[minDistanceIndex]), minDistanceIndex
+        else:
+            return False, False, 0.0, -1
 
     def afterRoi(self, hui) -> None:
         '''
@@ -903,3 +926,4 @@ class LaneSensor:
         No hace falta importar HUI
         '''
         self.H = hui.Hview
+        self.referencePoint = np.array((self.hui.zenithalSize[0]//2, self.hui.zenithalSize[1]), np.float32) # type: ignore
