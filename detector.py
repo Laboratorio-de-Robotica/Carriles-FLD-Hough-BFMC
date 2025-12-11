@@ -892,6 +892,7 @@ class LaneSensor:
             minDistanceIndex = segmentIndices[minDistanceIndex]
 
             # Verificar si el segmento está dentro del carril
+            # TODO: Está dando algunos falsos positivos, especialmente en segmentos a la izquierda del carril
             coords = self.zenithals.coords[minDistanceIndex]
             perpenducularLaneVersor = np.array([-np.sin(self.centralLaneAngle), np.cos(self.centralLaneAngle)], np.float32)
             laneOrigin = perpenducularLaneVersor * self.centralLaneDistance + self.referencePoint
