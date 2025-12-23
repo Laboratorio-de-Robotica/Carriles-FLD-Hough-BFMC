@@ -26,15 +26,14 @@ El código fue probado con estas versiones de dependencias, pero debería funcio
 ## Demo
 Ejecutar 
 
-    python3 carril.py
+    python3 main.py
 
 para usar el video por defecto bfmc2020_online_2.avi si se lo descargó previamente.
 
 Para usar otros videos:
 
-    python3 carril.py -v nombre_del_video
+    python3 main.py -v nombre_del_video
 
-Se proporcionan 3 variantes del mismo programa: carril.py, carril5.py y carril6.py .  La más nueva y completa es carril.py, sin número.
 
 ## Guía de uso
 El programa muestra 3 ventanas:
