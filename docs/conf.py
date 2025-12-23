@@ -36,5 +36,5 @@ html_theme = 'sphinx_rtd_theme'
 html_static_path = ['_static']
 
 # Lista de módulos que no estarán disponibles al documentar
-autodoc_mock_imports = ["torch"]
+autodoc_mock_imports = ["torch", "cv2"]
 html_show_sourcelink = False
