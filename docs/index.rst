@@ -7,5 +7,6 @@ Carriles-FLD-Hough-BFMC
 
   doc
   detector
+  HUI
 
 .. note:: `Repositorio en GitHub <https://github.com/Laboratorio-de-Robotica/Carriles-FLD-Hough-BFMC>`_
