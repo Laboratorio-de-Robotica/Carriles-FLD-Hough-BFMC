@@ -857,7 +857,6 @@ class LaneSensor:
             angleBin = (perpendicularAngleHistogramIndex + i) % self.hs.howManyAngleBins
             negativeDistance = angleBin >= halfAngleBins
             distanceHistogram = self.hs.houghSpace[angleBin]
-            #print(f'distanceHistogram: {type(distanceHistogram)}, {distanceHistogram.shape}, {distanceHistogram.dtype}')
             populatedIndices = np.flatnonzero(distanceHistogram[:self.hs.centralDistanceBin] if negativeDistance else distanceHistogram[self.hs.centralDistanceBin:])
             if len(populatedIndices) == 0:
                 # Todos los bins de distancia para este bin de ángulo están vacíos
@@ -901,19 +900,22 @@ class LaneSensor:
         # Verificar si el segmento está dentro del carril
         # TODO: Está dando algunos falsos positivos, especialmente en segmentos a la izquierda del carril
         coords = self.zenithals.coords[minDistanceIndex]
-        perpenducularLaneVersor = np.array([-np.sin(self.centralLaneAngle), np.cos(self.centralLaneAngle)], np.float32)
-        laneOrigin = perpenducularLaneVersor * self.centralLaneDistance + self.referencePoint
-        distanceToLaneCenter = (coords - laneOrigin) @ perpenducularLaneVersor
+        perpendicularLaneVersor = np.array([-np.sin(self.centralLaneAngle), np.cos(self.centralLaneAngle)], np.float32)
+        laneOrigin = perpendicularLaneVersor * self.centralLaneDistance + self.referencePoint
+        distanceToLaneCenter = (coords - laneOrigin) @ perpendicularLaneVersor
         '''
         print('coords:', coords)
         print('laneOrigin:', laneOrigin)
         print('perpenducularLaneVersor:', perpenducularLaneVersor)
         print(f'distanceToLaneCenter: {distanceToLaneCenter}')
         '''
-        halfLaneWidth = self.hs.laneWidthInPixels * 0.4    # menos de medio carril, incluye margen de seguridad
+        maxDistanceThresholdFromLaneCenter = self.hs.laneWidthInPixels * 0.8    # menos de medio carril, incluye margen de seguridad
+        '''
         isItIn = not(
-                (distanceToLaneCenter[0] >  halfLaneWidth and distanceToLaneCenter[1] >  halfLaneWidth) \
-            or (distanceToLaneCenter[0] < -halfLaneWidth and distanceToLaneCenter[1] < -halfLaneWidth) )
+               (distanceToLaneCenter[0] >  maxDistanceThresholdFromLaneCenter and distanceToLaneCenter[1] >  maxDistanceThresholdFromLaneCenter) \
+            or (distanceToLaneCenter[0] < -maxDistanceThresholdFromLaneCenter and distanceToLaneCenter[1] < -maxDistanceThresholdFromLaneCenter) )
+        '''
+        isItIn = abs(distanceToLaneCenter[0]) < maxDistanceThresholdFromLaneCenter and abs(distanceToLaneCenter[1]) < maxDistanceThresholdFromLaneCenter
 
         return True, isItIn, abs(self.zenithals.distances[minDistanceIndex]), minDistanceIndex
 
