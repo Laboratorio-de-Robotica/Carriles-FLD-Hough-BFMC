@@ -729,7 +729,7 @@ class LaneSensor:
         Returns:
         '''
         
-        # Innecesario, sólo para que linter no chille
+        # Valores por defecto que se devuelven cuando no se detecta la línea, y para que linter no chille
         leftLaneAvgAngle = 0.0
         leftLaneAvgDistance = 0.0
         rightLaneAvgAngle = 0.0
@@ -767,12 +767,13 @@ class LaneSensor:
         Identificado el índice angular principal mainAngleBin,
         se analizará el histograma de distancias 1D para ese ángulo,
         plegando en anchos de carril (howManyBinsInALane).
+        Líneas de la izquierda tienen distancias negativas, las de la derecha positivas.
         '''
         distanceHistogram = self.hs.houghSpace[mainAngleBin]
         foldedDistanceHistogram = distanceHistogram.reshape(-1, self.hs.howManyBinsInALane).sum(axis=0)
         maxFoldedDistanceHistogramIndex = int(np.argmax(foldedDistanceHistogram))
-        leftLaneLineIndex = (mainAngleBin, self.hs.centralDistanceBin + maxFoldedDistanceHistogramIndex)
-        rightLaneLineIndex = (mainAngleBin, self.hs.centralDistanceBin + maxFoldedDistanceHistogramIndex - self.hs.howManyBinsInALane)
+        leftLaneLineIndex = (mainAngleBin, self.hs.centralDistanceBin + maxFoldedDistanceHistogramIndex - self.hs.howManyBinsInALane)
+        rightLaneLineIndex = (mainAngleBin, self.hs.centralDistanceBin + maxFoldedDistanceHistogramIndex)
 
         '''
         Encontrar los segmentos de las líneas izquierda y derecha de carril en cada bin.
@@ -826,11 +827,10 @@ class LaneSensor:
     def endOfLane(self)->tuple:
         '''
         Detecta la línea de fin de carril en cada esquina, y mide la distancia.
-        Es una línea perpemndicular a las líneas de carril.
+        Es una línea perpendicular a las líneas de carril.
         Se buscan en el bin perpendicular al principal, más menos uno.
-        Sólo si el carril fue detectado, de otro modo busca el fin del carril.
+        Sólo si el carril fue detectado, de otro modo imprime una advertencia y retorna con datos nulos.
 
-        Sólo se debe invocar si el carril fue detectado.
         self.mainAngleBin es la dirección del carril.
 
         Returns:
@@ -844,7 +844,7 @@ class LaneSensor:
         # Sinónimo
         halfAngleBins = self.hs.centralAngleBin
 
-        minDistanceIndex = -1   # inicializa con -1 para "no encontrado"
+        #minDistanceIndex = -1   # inicializa con -1 para "no encontrado"
         perpendicularAngleHistogramIndex:int = (self.mainAngleBin + halfAngleBins) % self.hs.howManyAngleBins
 
         binIndices = []
