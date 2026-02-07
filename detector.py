@@ -665,7 +665,12 @@ class LaneSensor:
 
     def update(self, im:np.ndarray) -> bool:
         '''
-        Actualiza el estado, disponibiliza los segmentos que se usan en otros métodos.
+        Recibe la imagen y extrae segmentos.
+        Produce:
+        - self.perspectives: segmentos detectados en perspectiva, con sus propiedades calculadas.
+        - self.zenithals: segmentos proyectados a cenital, con sus propiedades calculadas.
+        - self.hs: espacio de Hough actualizado con los segmentos proyectados a cenital
+        
         
         Arguments:
         im: imagen en perspectiva para procesar
@@ -725,8 +730,14 @@ class LaneSensor:
 
     def lane(self)->tuple:
         '''
+        Analiza el espacio de Hough buscando líneas de carril izquierda y derecha.
+
 
         Returns:
+        - leftLaneDetected: bool indicando si se detectó la línea de carril izquierda.
+        - rightLaneDetected: bool indicando si se detectó la línea de carril derecha.
+        - centralLaneAngle: ángulo promedio de la línea de carril central, en radianes, con respecto a la horizontal, positivo en sentido horario.
+        - centralLaneDistance: distancia promedio de la línea de carril central, en píxeles, con signo (negativa a la izquierda, positiva a la derecha).        
         '''
         
         # Valores por defecto que se devuelven cuando no se detecta la línea, y para que linter no chille
@@ -812,10 +823,10 @@ class LaneSensor:
             self.centralLaneDistance = (leftLaneAvgDistance + rightLaneAvgDistance) / 2
         elif leftLaneDetected:
             self.centralLaneAngle = leftLaneAvgAngle
-            self.centralLaneDistance = leftLaneAvgDistance - self.hs.laneWidthInPixels/2
+            self.centralLaneDistance = leftLaneAvgDistance + self.hs.laneWidthInPixels/2
         elif rightLaneDetected:
             self.centralLaneAngle = rightLaneAvgAngle
-            self.centralLaneDistance = rightLaneAvgDistance + self.hs.laneWidthInPixels/2
+            self.centralLaneDistance = rightLaneAvgDistance - self.hs.laneWidthInPixels/2
         else:
             # Ningún carril detectado
             self.laneDetected = False
